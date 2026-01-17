@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_wifi.h"
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -26,9 +27,11 @@
 #include "esp_vfs_eventfd.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
 #if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
 #include "esp_br_wifi_config.h"
 #endif
+
 #include "openthread/backbone_router_ftd.h"
 #include "openthread/border_router.h"
 #include "openthread/cli.h"
@@ -50,6 +53,7 @@
 #include "example_common_private.h"
 #include "protocol_examples_common.h"
 #endif
+
 #include "ot_examples_common.h"
 
 #if !CONFIG_EXAMPLE_CONNECT_WIFI && !CONFIG_EXAMPLE_CONNECT_ETHERNET
@@ -57,6 +61,55 @@
 #endif
 
 #define TAG "esp_ot_br"
+
+/* -------------------------------------------------------------------------- */
+/* Backbone netif helpers                                                     */
+/* -------------------------------------------------------------------------- */
+
+static esp_netif_t *br_find_backbone_netif(void)
+{
+    esp_netif_t *n = NULL;
+
+#if CONFIG_EXAMPLE_CONNECT_WIFI
+    /* Your logs show this one exists */
+    n = esp_netif_get_handle_from_ifkey("example_netif_sta");
+    if (n) {
+        return n;
+    }
+
+    /* Common ESP-IDF default */
+    n = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (n) {
+        return n;
+    }
+#endif
+
+#if CONFIG_EXAMPLE_CONNECT_ETHERNET
+    /* If you enable ethernet later, these are common keys */
+    n = esp_netif_get_handle_from_ifkey("example_netif_eth");
+    if (n) {
+        return n;
+    }
+
+    n = esp_netif_get_handle_from_ifkey("ETH_DEF");
+    if (n) {
+        return n;
+    }
+#endif
+
+    return NULL;
+}
+
+static void br_dump_netifs(void)
+{
+    esp_netif_t *n = NULL;
+    while ((n = esp_netif_next_unsafe(n)) != NULL) {
+        const char *k = esp_netif_get_ifkey(n);
+        ESP_LOGI(TAG, "netif: if_key=%s", k ? k : "(null)");
+    }
+}
+
+/* -------------------------------------------------------------------------- */
 
 #if CONFIG_EXAMPLE_CONNECT_WIFI && CONFIG_OPENTHREAD_BR_AUTO_START
 /**
@@ -139,15 +192,31 @@ static void ot_br_init(void *ctx)
             ESP_LOGE(TAG, "Rebooting ... to try again");
             esp_restart();
         }
+
     }
+
 #elif CONFIG_EXAMPLE_CONNECT_ETHERNET
     // Ethernet connection mode
     ESP_ERROR_CHECK(example_ethernet_connect());
 #endif // CONFIG_EXAMPLE_CONNECT_WIFI || CONFIG_EXAMPLE_CONNECT_ETHERNET
 
     esp_openthread_lock_acquire(portMAX_DELAY);
-    esp_openthread_set_backbone_netif(get_example_netif());
+
+    /* Set backbone netif deterministically, right before BR init */
+    esp_netif_t *backbone = br_find_backbone_netif();
+    if (backbone == NULL) {
+        ESP_LOGE(TAG, "Backbone netif not found by if_key (expected STA/ETH netif)");
+        br_dump_netifs();
+        esp_openthread_lock_release();
+        ESP_LOGE(TAG, "Rebooting to retry...");
+        esp_restart();
+    }
+
+    esp_openthread_set_backbone_netif(backbone);
+    ESP_LOGI(TAG, "Backbone netif set in ot_br_init: if_key=%s", esp_netif_get_ifkey(backbone));
+
     ESP_ERROR_CHECK(esp_openthread_border_router_init());
+
 #if CONFIG_EXAMPLE_CONNECT_WIFI
     esp_ot_wifi_border_router_init_flag_set(true);
 #endif
@@ -168,9 +237,11 @@ static void ot_br_init(void *ctx)
             memcpy(new_dataset.mNetworkName.m8, network_name, strlen(network_name) + 1);
             new_dataset.mComponents.mIsNetworkNamePresent = true;
         }
+
         otDatasetConvertToTlvs(&new_dataset, &dataset);
         ESP_LOGI(TAG, "Created new random Thread dataset");
     }
+
     ESP_ERROR_CHECK(esp_openthread_auto_start(&dataset));
     esp_openthread_lock_release();
 
@@ -197,12 +268,15 @@ void launch_openthread_border_router(const esp_openthread_config_t *config,
 #endif
 
     ESP_ERROR_CHECK(esp_openthread_start(config));
+
 #if CONFIG_AUTO_UPDATE_RCP
     esp_ot_update_rcp_if_different();
 #endif
+
 #if CONFIG_OPENTHREAD_CLI_ESP_EXTENSION
     esp_cli_custom_command_init();
 #endif
+
 #if CONFIG_OPENTHREAD_BR_AUTO_START
     xTaskCreate(ot_br_init, "ot_br_init", 6144, NULL, 4, NULL);
 #endif

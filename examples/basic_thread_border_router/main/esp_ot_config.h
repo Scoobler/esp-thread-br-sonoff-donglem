@@ -17,6 +17,13 @@
 #include "esp_openthread_types.h"
 
 #define RCP_FIRMWARE_DIR "/spiffs/ot_rcp"
+/*
+#define RADIO_UART_NUM              UART_NUM_1
+#define RADIO_UART_TX_GPIO          GPIO_NUM_13
+#define RADIO_UART_RX_GPIO          GPIO_NUM_17
+#define RADIO_UART_BAUDRATE         115200
+#define RADIO_UART_BUF_SIZE         256
+*/
 
 #if CONFIG_OPENTHREAD_RADIO_SPINEL_UART
 #define ESP_OPENTHREAD_DEFAULT_RADIO_CONFIG()              \
@@ -26,16 +33,16 @@
             .port = 1,                                     \
             .uart_config =                                 \
                 {                                          \
-                    .baud_rate = 460800,                   \
-                    .data_bits = UART_DATA_8_BITS,         \
-                    .parity = UART_PARITY_DISABLE,         \
-                    .stop_bits = UART_STOP_BITS_1,         \
-                    .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, \
+                    .baud_rate = 115200,                   \
+                    .data_bits = 3, /*UART_DATA_8_BITS*/         \
+                    .parity = 0, /*UART_PARITY_DISABLE*/         \
+                    .stop_bits = 1, /*UART_STOP_BITS_1*/         \
+                    .flow_ctrl = 0, /*UART_HW_FLOWCTRL_DISABLE*/ \
                     .rx_flow_ctrl_thresh = 0,              \
-                    .source_clk = UART_SCLK_DEFAULT,       \
+                    .source_clk = 0, /*UART_SCLK_DEFAULT*/       \
                 },                                         \
-            .rx_pin = CONFIG_PIN_TO_RCP_TX,                \
-            .tx_pin = CONFIG_PIN_TO_RCP_RX,                \
+            .rx_pin = 13,                \
+            .tx_pin = 17,                \
         },                                                 \
     }
 #else
