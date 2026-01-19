@@ -95,7 +95,7 @@ void app_main(void)
 #endif
 
     ESP_ERROR_CHECK(mdns_init());
-    ESP_ERROR_CHECK(mdns_hostname_set("esp-ot-br"));
+    ESP_ERROR_CHECK(mdns_hostname_set("dongle-m-ot-br"));
 #if CONFIG_OPENTHREAD_CLI_OTA
     esp_set_ota_server_cert((char *)server_cert_pem_start);
 #endif

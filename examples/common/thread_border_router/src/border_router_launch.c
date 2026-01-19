@@ -3,6 +3,7 @@
  *
  * SPDX-License-Identifier: CC0-1.0
  *
+ * Patched for: Ethernet-preferred, Wi-Fi fallback, SoftAP provisioning w/ fail counter.
  */
 
 #include "border_router_launch.h"
@@ -11,8 +12,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "esp_wifi.h"
 #include "esp_check.h"
+#include "esp_err.h"
+#include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
@@ -24,79 +26,102 @@
 #include "esp_ot_cli_extension.h"
 #include "esp_ot_rcp_update.h"
 #include "esp_rcp_update.h"
+#include "esp_system.h"
 #include "esp_vfs_eventfd.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 
+#if CONFIG_EXAMPLE_CONNECT_WIFI
+#include "esp_wifi.h"
 #if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
 #include "esp_br_wifi_config.h"
 #endif
+#if CONFIG_OPENTHREAD_CLI_WIFI
+#include "esp_ot_wifi_cmd.h"
+#endif
+#endif
+
+#if CONFIG_EXAMPLE_CONNECT_ETHERNET
+#include "example_common_private.h" // for example_ethernet_connect() helper
+#include "esp_eth.h"
+#endif
+
+#include "mdns.h"
+#include "ot_examples_common.h"
 
 #include "openthread/backbone_router_ftd.h"
 #include "openthread/border_router.h"
 #include "openthread/cli.h"
 #include "openthread/dataset_ftd.h"
-#include "openthread/error.h"
 #include "openthread/instance.h"
 #include "openthread/ip6.h"
 #include "openthread/logging.h"
-#include "openthread/platform/radio.h"
-#include "openthread/tasklet.h"
 #include "openthread/thread_ftd.h"
 
-#if CONFIG_OPENTHREAD_CLI_WIFI
-#include "esp_ot_wifi_cmd.h"
-#endif
-
-#if CONFIG_OPENTHREAD_BR_AUTO_START
-#include "esp_wifi.h"
-#include "example_common_private.h"
-#include "protocol_examples_common.h"
-#endif
-
-#include "ot_examples_common.h"
-
 #if !CONFIG_EXAMPLE_CONNECT_WIFI && !CONFIG_EXAMPLE_CONNECT_ETHERNET
-#error No backbone netif!
+#error No backbone netif! Enable at least Wi-Fi or Ethernet.
 #endif
 
 #define TAG "esp_ot_br"
 
-/* -------------------------------------------------------------------------- */
-/* Backbone netif helpers                                                     */
-/* -------------------------------------------------------------------------- */
+/* ----------------------- Policy tuning knobs ---------------------------- */
 
-static esp_netif_t *br_find_backbone_netif(void)
-{
-    esp_netif_t *n = NULL;
+#define ETH_WAIT_MS                 (10000)   // wait up to 10s for Ethernet IP
+#define WIFI_WAIT_MS                (12000)   // wait up to 12s for Wi-Fi IP
+#define SOFTAP_WINDOW_MS            (180000)  // 3 minutes SoftAP window
+#define FAIL_COUNT_TRIGGER_SOFTAP   (5)       // after 5 failed boots, open SoftAP
+#define WIFI_SSID_MAX_LEN           (32)
+#define WIFI_PASS_MAX_LEN           (64)
 
-#if CONFIG_EXAMPLE_CONNECT_WIFI
-    /* Your logs show this one exists */
-    n = esp_netif_get_handle_from_ifkey("example_netif_sta");
-    if (n) {
-        return n;
-    }
+/* ----------------------- NVS keys --------------------------------------- */
 
-    /* Common ESP-IDF default */
-    n = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (n) {
-        return n;
-    }
+#define NVS_NS_BR                   "br"
+#define NVS_KEY_FAIL_COUNT          "fail_count"
+#define NVS_KEY_LAST_SSID           "last_ssid"
+
+/* ----------------------- Events / state --------------------------------- */
+
+#define BIT_ETH_GOT_IP              (1U << 0)
+#define BIT_WIFI_GOT_IP             (1U << 1)
+
+static EventGroupHandle_t s_net_ev;
+
+static esp_netif_t *s_backbone = NULL;
+static bool s_backbone_locked = false;
+
+/* For Ethernet connect helper isolation */
+#if CONFIG_EXAMPLE_CONNECT_ETHERNET
+static TaskHandle_t s_eth_task = NULL;
 #endif
 
+/* ------------------------------------------------------------------------ */
+/* Helpers: netif discovery                                                  */
+/* ------------------------------------------------------------------------ */
+
+static esp_netif_t *br_find_wifi_netif(void)
+{
+#if CONFIG_EXAMPLE_CONNECT_WIFI
+    esp_netif_t *n = esp_netif_get_handle_from_ifkey("example_netif_sta");
+    if (n) return n;
+
+    n = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (n) return n;
+#endif
+    return NULL;
+}
+
+static esp_netif_t *br_find_eth_netif(void)
+{
 #if CONFIG_EXAMPLE_CONNECT_ETHERNET
-    /* If you enable ethernet later, these are common keys */
-    n = esp_netif_get_handle_from_ifkey("example_netif_eth");
-    if (n) {
-        return n;
-    }
+    esp_netif_t *n = esp_netif_get_handle_from_ifkey("example_netif_eth");
+    if (n) return n;
 
     n = esp_netif_get_handle_from_ifkey("ETH_DEF");
-    if (n) {
-        return n;
-    }
+    if (n) return n;
 #endif
-
     return NULL;
 }
 
@@ -109,127 +134,479 @@ static void br_dump_netifs(void)
     }
 }
 
-/* -------------------------------------------------------------------------- */
-
-#if CONFIG_EXAMPLE_CONNECT_WIFI && CONFIG_OPENTHREAD_BR_AUTO_START
-/**
- * @brief Save Wi-Fi configuration to NVS and connect
- *
- * @param ssid Wi-Fi SSID
- * @param password Wi-Fi password (can be NULL for open network)
- * @return true if connection successful, false otherwise
- */
-static bool wifi_config_save_and_connect(const char *ssid, const char *password)
+static void br_lock_backbone(esp_netif_t *netif)
 {
-    if (esp_ot_wifi_connect(ssid, password) == ESP_OK) {
-        ESP_LOGI(TAG, "Connected to Wi-Fi: %s", ssid);
+    if (!s_backbone_locked && netif) {
+        s_backbone = netif;
+        s_backbone_locked = true;
+        ESP_LOGI(TAG, "Backbone locked to if_key=%s", esp_netif_get_ifkey(netif));
+    }
+}
 
-        // Save to NVS
-        if (esp_ot_wifi_config_set_ssid(ssid) != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to save Wi-Fi SSID to NVS");
-            return false;
-        }
+/* ------------------------------------------------------------------------ */
+/* Helpers: NVS fail counter                                                 */
+/* ------------------------------------------------------------------------ */
 
-        if (password && strlen(password) > 0) {
-            if (esp_ot_wifi_config_set_password(password) != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to save Wi-Fi password to NVS");
-                return false;
-            }
-        } else {
-            // Clear password for open network
-            if (esp_ot_wifi_config_set_password("") != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to clear Wi-Fi password in NVS");
-                return false;
-            }
+static uint8_t br_nvs_get_fail_count(void)
+{
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open(NVS_NS_BR, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, NVS_KEY_FAIL_COUNT, &v);
+        nvs_close(h);
+    }
+    return v;
+}
+
+static void br_nvs_set_fail_count(uint8_t v)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_BR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_FAIL_COUNT, v);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+static void br_nvs_reset_fail_count(void)
+{
+    br_nvs_set_fail_count(0);
+}
+
+static bool br_nvs_get_last_ssid(char *out, size_t out_len)
+{
+    if (!out || out_len == 0) return false;
+    out[0] = '\0';
+
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_BR, NVS_READONLY, &h) != ESP_OK) {
+        return false;
+    }
+
+    size_t required = 0;
+    esp_err_t err = nvs_get_str(h, NVS_KEY_LAST_SSID, NULL, &required);
+    if (err != ESP_OK || required == 0 || required > out_len) {
+        nvs_close(h);
+        return false;
+    }
+
+    err = nvs_get_str(h, NVS_KEY_LAST_SSID, out, &required);
+    nvs_close(h);
+    return (err == ESP_OK && out[0] != '\0');
+}
+
+static void br_nvs_set_last_ssid(const char *ssid)
+{
+    if (!ssid) ssid = "";
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_BR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_str(h, NVS_KEY_LAST_SSID, ssid);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+/* If SSID changed since last successful run, clear fail counter */
+static void br_reset_fail_if_ssid_changed(const char *current_ssid)
+{
+    char last[WIFI_SSID_MAX_LEN] = {0};
+    bool have_last = br_nvs_get_last_ssid(last, sizeof(last));
+    if (!have_last) {
+        return;
+    }
+    if (current_ssid && strcmp(last, current_ssid) != 0) {
+        ESP_LOGW(TAG, "SSID changed (%s -> %s), resetting fail counter",
+                 last, current_ssid);
+        br_nvs_reset_fail_count();
+    }
+}
+
+/* ------------------------------------------------------------------------ */
+/* Event handlers                                                           */
+/* ------------------------------------------------------------------------ */
+
+static void on_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    (void)arg;
+    (void)data;
+
+    if (base != IP_EVENT) {
+        return;
+    }
+
+#if CONFIG_EXAMPLE_CONNECT_ETHERNET
+    if (id == IP_EVENT_ETH_GOT_IP) {
+        ESP_LOGI(TAG, "IP_EVENT_ETH_GOT_IP");
+        xEventGroupSetBits(s_net_ev, BIT_ETH_GOT_IP);
+        if (!s_backbone_locked) {
+            br_lock_backbone(br_find_eth_netif());
         }
+        return;
+    }
+#endif
+
+#if CONFIG_EXAMPLE_CONNECT_WIFI
+    if (id == IP_EVENT_STA_GOT_IP) {
+        ESP_LOGI(TAG, "IP_EVENT_STA_GOT_IP");
+        xEventGroupSetBits(s_net_ev, BIT_WIFI_GOT_IP);
+        if (!s_backbone_locked) {
+            br_lock_backbone(br_find_wifi_netif());
+        }
+        return;
+    }
+#endif
+}
+
+#if CONFIG_EXAMPLE_CONNECT_WIFI
+static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    (void)arg;
+    (void)data;
+    if (base != WIFI_EVENT) {
+        return;
+    }
+
+    /* Not strictly required for the policy, but useful for logs/debug */
+#if defined(WIFI_EVENT_STA_DISCONNECTED)
+    if (id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGW(TAG, "WIFI_EVENT_STA_DISCONNECTED");
+    }
+#endif
+}
+#endif
+
+/* ------------------------------------------------------------------------ */
+/* Ethernet attempt (non-blocking to policy)                                 */
+/* ------------------------------------------------------------------------ */
+
+#if CONFIG_EXAMPLE_CONNECT_ETHERNET
+static void br_eth_connect_task(void *arg)
+{
+    (void)arg;
+    /* This helper blocks forever when no cable/DHCP. Keep it isolated. */
+    esp_err_t err = example_ethernet_connect();
+    ESP_LOGW(TAG, "example_ethernet_connect() returned: %s", esp_err_to_name(err));
+    s_eth_task = NULL;
+    vTaskDelete(NULL);
+}
+
+static bool br_try_eth_with_wait(uint32_t wait_ms)
+{
+    ESP_LOGI(TAG, "Trying Ethernet...");
+
+    if (s_eth_task == NULL) {
+        xTaskCreate(br_eth_connect_task, "eth_conn", 4096, NULL, 4, &s_eth_task);
+    }
+
+    EventBits_t bits = xEventGroupWaitBits(
+        s_net_ev,
+        BIT_ETH_GOT_IP,
+        pdFALSE,
+        pdTRUE,
+        pdMS_TO_TICKS(wait_ms)
+    );
+
+    if (bits & BIT_ETH_GOT_IP) {
+        ESP_LOGI(TAG, "Ethernet got IP");
         return true;
     }
+
+    ESP_LOGW(TAG, "Ethernet timed out after %u ms", (unsigned)wait_ms);
     return false;
 }
 #endif
 
+/* ------------------------------------------------------------------------ */
+/* Wi-Fi attempt + SoftAP provisioning                                       */
+/* ------------------------------------------------------------------------ */
+
+#if CONFIG_EXAMPLE_CONNECT_WIFI
+
+static bool br_get_nvs_wifi_creds(char *ssid, size_t ssid_len, char *pass, size_t pass_len)
+{
+#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
+    /* These come from esp_br_wifi_config (saved in NVS) */
+    if (ssid && ssid_len) ssid[0] = '\0';
+    if (pass && pass_len) pass[0] = '\0';
+
+    if (esp_ot_wifi_config_get_ssid(ssid) == ESP_OK) {
+        esp_ot_wifi_config_get_password(pass);
+        return (ssid[0] != '\0');
+    }
+    return false;
+#else
+    /* If you disabled SoftAP setup, fall back to Kconfig values */
+    if (ssid && ssid_len) {
+        strncpy(ssid, CONFIG_EXAMPLE_WIFI_SSID, ssid_len - 1);
+        ssid[ssid_len - 1] = '\0';
+    }
+    if (pass && pass_len) {
+        strncpy(pass, CONFIG_EXAMPLE_WIFI_PASSWORD, pass_len - 1);
+        pass[pass_len - 1] = '\0';
+    }
+    return (ssid && ssid[0] != '\0');
+#endif
+}
+
+static bool br_wifi_connect_and_wait(const char *ssid, const char *pass, uint32_t wait_ms)
+{
+    if (!ssid || ssid[0] == '\0') {
+        return false;
+    }
+
+    ESP_LOGI(TAG, "Trying Wi-Fi SSID: %s", ssid);
+
+#if CONFIG_OPENTHREAD_CLI_WIFI
+    /* esp_ot_wifi_connect exists when Wi-Fi CLI helper is enabled */
+    if (esp_ot_wifi_connect(ssid, pass ? pass : "") != ESP_OK) {
+        ESP_LOGW(TAG, "esp_ot_wifi_connect failed");
+        return false;
+    }
+#else
+    /* If you disable CONFIG_OPENTHREAD_CLI_WIFI, you must provide your own Wi-Fi connect routine.
+       For now, keep CONFIG_OPENTHREAD_CLI_WIFI=y. */
+    ESP_LOGE(TAG, "CONFIG_OPENTHREAD_CLI_WIFI is disabled; no Wi-Fi connect function available");
+    return false;
+#endif
+
+    EventBits_t bits = xEventGroupWaitBits(
+        s_net_ev,
+        BIT_WIFI_GOT_IP,
+        pdFALSE,
+        pdTRUE,
+        pdMS_TO_TICKS(wait_ms)
+    );
+
+    if (bits & BIT_WIFI_GOT_IP) {
+        ESP_LOGI(TAG, "Wi-Fi got IP");
+        return true;
+    }
+
+    ESP_LOGW(TAG, "Wi-Fi timed out after %u ms", (unsigned)wait_ms);
+    return false;
+}
+
+#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
+static bool br_softap_provision_window(uint32_t window_ms, char *out_ssid, size_t out_ssid_len,
+                                       char *out_pass, size_t out_pass_len)
+{
+    if (out_ssid && out_ssid_len) out_ssid[0] = '\0';
+    if (out_pass && out_pass_len) out_pass[0] = '\0';
+
+    ESP_LOGW(TAG, "Starting SoftAP provisioning window (%u ms)", (unsigned)window_ms);
+    esp_br_wifi_config_start();
+
+    /* This blocks until configured OR timeout */
+    esp_br_wifi_config_get_configured_wifi(
+        out_ssid, out_ssid_len,
+        out_pass, out_pass_len,
+        window_ms
+    );
+
+    esp_br_wifi_config_stop();
+
+    if (out_ssid && out_ssid[0] != '\0') {
+        ESP_LOGI(TAG, "Provisioned Wi-Fi SSID: %s", out_ssid);
+        return true;
+    }
+
+    ESP_LOGW(TAG, "SoftAP provisioning window expired with no new creds");
+    return false;
+}
+#endif /* CONFIG_OPENTHREAD_BR_SOFTAP_SETUP */
+
+#endif /* CONFIG_EXAMPLE_CONNECT_WIFI */
+
+/* ------------------------------------------------------------------------ */
+/* OTBR init task (policy + backbone selection)                              */
+/* ------------------------------------------------------------------------ */
+
 #if CONFIG_OPENTHREAD_BR_AUTO_START
 static void ot_br_init(void *ctx)
 {
-#if CONFIG_EXAMPLE_CONNECT_WIFI
-    // Wi-Fi connection mode - two ways to get Wi-Fi parameters:
-    // 1. CONFIG_OPENTHREAD_BR_SOFTAP_SETUP: via SoftAP Web interface
-    // 2. CONFIG_EXAMPLE_WIFI_SSID: from Kconfig
-    char wifi_ssid[32] = "";
-    char wifi_password[64] = "";
-    bool has_nvs_wifi_config = false;
+    (void)ctx;
 
-    // Check if Wi-Fi configuration exists in NVS
-    if (esp_ot_wifi_config_get_ssid(wifi_ssid) == ESP_OK) {
-        esp_ot_wifi_config_get_password(wifi_password);
-        has_nvs_wifi_config = true;
+    /* Ensure event group exists */
+    if (s_net_ev == NULL) {
+        s_net_ev = xEventGroupCreate();
+    } else {
+        xEventGroupClearBits(s_net_ev, BIT_ETH_GOT_IP | BIT_WIFI_GOT_IP);
     }
 
-    if (has_nvs_wifi_config && esp_ot_wifi_connect(wifi_ssid, wifi_password) == ESP_OK) {
-        ESP_LOGI(TAG, "Connected to Wi-Fi: %s", wifi_ssid);
-    } else {
-#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
-        // SoftAP Wi-Fi configuration mode
-        esp_br_wifi_config_start();
+    /* Register event handlers (safe to register once; duplicates return ESP_ERR_INVALID_STATE in some IDF setups) */
+    esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, &on_ip_event, NULL);
 
-        // Wait for user to configure Wi-Fi via web interface (wait forever)
-        esp_br_wifi_config_get_configured_wifi(wifi_ssid, sizeof(wifi_ssid), wifi_password, sizeof(wifi_password), 0);
-
-        // Stop SoftAP mode
-        esp_br_wifi_config_stop();
-#else
-        // Standard Wi-Fi connection mode - get from Kconfig
-        strncpy(wifi_ssid, CONFIG_EXAMPLE_WIFI_SSID, sizeof(wifi_ssid) - 1);
-        wifi_ssid[sizeof(wifi_ssid) - 1] = '\0';
-        strncpy(wifi_password, CONFIG_EXAMPLE_WIFI_PASSWORD, sizeof(wifi_password) - 1);
-        wifi_password[sizeof(wifi_password) - 1] = '\0';
+#if CONFIG_EXAMPLE_CONNECT_WIFI
+    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &on_wifi_event, NULL);
 #endif
 
-        // Connect to Wi-Fi and save to NVS
-        if (!wifi_config_save_and_connect(wifi_ssid, wifi_password)) {
-            // In auto-start mode, Wi-Fi must be configured and connected before initializing the OpenThread stack
-            ESP_LOGE(TAG, "Failed to connect to Wi-Fi: %s", wifi_ssid);
-            ESP_LOGE(TAG, "Rebooting ... to try again");
-            esp_restart();
+    /* mDNS */
+    ESP_ERROR_CHECK(mdns_init());
+
+    /* For debugging: show what netifs exist at this moment */
+    br_dump_netifs();
+
+    /* Read stored fail count */
+    uint8_t fail_count = br_nvs_get_fail_count();
+    ESP_LOGI(TAG, "Boot fail_count=%u", (unsigned)fail_count);
+
+    /* 1) Prefer Ethernet (if enabled) */
+#if CONFIG_EXAMPLE_CONNECT_ETHERNET
+    if (br_try_eth_with_wait(ETH_WAIT_MS)) {
+        /* Success via Ethernet */
+        br_nvs_reset_fail_count();
+        /* lock last_ssid not updated here */
+        goto backbone_ready;
+    }
+#endif
+
+    /* 2) Wi-Fi path (if enabled) */
+#if CONFIG_EXAMPLE_CONNECT_WIFI
+    {
+        char ssid[WIFI_SSID_MAX_LEN] = {0};
+        char pass[WIFI_PASS_MAX_LEN] = {0};
+        bool have_creds = br_get_nvs_wifi_creds(ssid, sizeof(ssid), pass, sizeof(pass));
+
+        /* If SSID changed (compared to last known good), reset fail count */
+        if (have_creds) {
+            br_reset_fail_if_ssid_changed(ssid);
+            fail_count = br_nvs_get_fail_count();
         }
 
+        /* If no creds, immediately go to SoftAP setup (easy onboarding) */
+        if (!have_creds) {
+#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
+            bool provisioned = br_softap_provision_window(SOFTAP_WINDOW_MS, ssid, sizeof(ssid), pass, sizeof(pass));
+            if (!provisioned) {
+                /* No creds entered in 3 minutes -> reboot once (self-heal path) */
+                ESP_LOGW(TAG, "No creds entered; rebooting to self-heal...");
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+            }
+            /* Try Wi-Fi once with new creds */
+            if (br_wifi_connect_and_wait(ssid, pass, WIFI_WAIT_MS)) {
+                br_nvs_reset_fail_count();
+                br_nvs_set_last_ssid(ssid);
+                goto backbone_ready;
+            }
+#else
+            ESP_LOGE(TAG, "No Wi-Fi creds and SoftAP setup disabled; cannot proceed");
+#endif
+        } else {
+            /* Have creds */
+            bool wifi_ok = br_wifi_connect_and_wait(ssid, pass, WIFI_WAIT_MS);
+            if (wifi_ok) {
+                br_nvs_reset_fail_count();
+                br_nvs_set_last_ssid(ssid);
+                goto backbone_ready;
+            }
+
+            /* Wi-Fi failed -> bump fail_count */
+            fail_count = br_nvs_get_fail_count();
+            if (fail_count < 255) {
+                fail_count++;
+            }
+            br_nvs_set_fail_count(fail_count);
+            ESP_LOGW(TAG, "Wi-Fi failed; fail_count now %u", (unsigned)fail_count);
+
+            /* If we hit the trigger, open SoftAP for 3 minutes to allow reconfig,
+               but do NOT get stuck there forever: reboot once if nothing changes. */
+            if (fail_count >= FAIL_COUNT_TRIGGER_SOFTAP) {
+#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
+                char new_ssid[WIFI_SSID_MAX_LEN] = {0};
+                char new_pass[WIFI_PASS_MAX_LEN] = {0};
+
+                bool provisioned = br_softap_provision_window(SOFTAP_WINDOW_MS,
+                                                              new_ssid, sizeof(new_ssid),
+                                                              new_pass, sizeof(new_pass));
+
+                if (!provisioned) {
+                    ESP_LOGW(TAG, "SoftAP window expired; rebooting to self-heal...");
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();
+                }
+
+                /* Provisioned: try Wi-Fi once with updated creds */
+                if (br_wifi_connect_and_wait(new_ssid, new_pass, WIFI_WAIT_MS)) {
+                    br_nvs_reset_fail_count();
+                    br_nvs_set_last_ssid(new_ssid);
+                    goto backbone_ready;
+                }
+
+                /* Even new creds failed -> reboot (keeps trying in future boots, SoftAP will return after 5 failures) */
+                ESP_LOGW(TAG, "Wi-Fi still failing after reprovision; rebooting...");
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+#else
+                ESP_LOGE(TAG, "Fail_count reached %u but SoftAP setup disabled; rebooting", (unsigned)fail_count);
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                esp_restart();
+#endif
+            }
+
+            /* Not yet at trigger: just reboot to try again next boot */
+            ESP_LOGW(TAG, "Rebooting after Wi-Fi failure (fail_count=%u)", (unsigned)fail_count);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            esp_restart();
+        }
+    }
+#endif /* CONFIG_EXAMPLE_CONNECT_WIFI */
+
+    /* If we got here: no Ethernet success and no Wi-Fi path (or both disabled) */
+    fail_count = br_nvs_get_fail_count();
+    if (fail_count < 255) fail_count++;
+    br_nvs_set_fail_count(fail_count);
+
+    ESP_LOGE(TAG, "No backbone available; rebooting (fail_count=%u)", (unsigned)fail_count);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+
+backbone_ready:
+    /* Choose backbone if not already locked */
+    if (!s_backbone_locked) {
+        /* Prefer eth netif if it exists and has IP bit set; else wifi */
+        EventBits_t bits = xEventGroupGetBits(s_net_ev);
+#if CONFIG_EXAMPLE_CONNECT_ETHERNET
+        if (bits & BIT_ETH_GOT_IP) {
+            br_lock_backbone(br_find_eth_netif());
+        }
+#endif
+#if CONFIG_EXAMPLE_CONNECT_WIFI
+        if (!s_backbone_locked && (bits & BIT_WIFI_GOT_IP)) {
+            br_lock_backbone(br_find_wifi_netif());
+        }
+#endif
     }
 
-#elif CONFIG_EXAMPLE_CONNECT_ETHERNET
-    // Ethernet connection mode
-    ESP_ERROR_CHECK(example_ethernet_connect());
-#endif // CONFIG_EXAMPLE_CONNECT_WIFI || CONFIG_EXAMPLE_CONNECT_ETHERNET
-
-    esp_openthread_lock_acquire(portMAX_DELAY);
-
-    /* Set backbone netif deterministically, right before BR init */
-    esp_netif_t *backbone = br_find_backbone_netif();
-    if (backbone == NULL) {
-        ESP_LOGE(TAG, "Backbone netif not found by if_key (expected STA/ETH netif)");
+    if (s_backbone == NULL) {
+        ESP_LOGE(TAG, "Backbone netif still NULL. Dumping netifs and rebooting.");
         br_dump_netifs();
-        esp_openthread_lock_release();
-        ESP_LOGE(TAG, "Rebooting to retry...");
+        vTaskDelay(pdMS_TO_TICKS(1000));
         esp_restart();
     }
 
-    esp_openthread_set_backbone_netif(backbone);
-    ESP_LOGI(TAG, "Backbone netif set in ot_br_init: if_key=%s", esp_netif_get_ifkey(backbone));
+    /* Now init OpenThread BR with the selected backbone */
+    esp_openthread_lock_acquire(portMAX_DELAY);
+
+    esp_openthread_set_backbone_netif(s_backbone);
+    ESP_LOGI(TAG, "Backbone netif set: if_key=%s", esp_netif_get_ifkey(s_backbone));
 
     ESP_ERROR_CHECK(esp_openthread_border_router_init());
 
 #if CONFIG_EXAMPLE_CONNECT_WIFI
+#if CONFIG_OPENTHREAD_CLI_WIFI
     esp_ot_wifi_border_router_init_flag_set(true);
 #endif
+#endif
 
+    /* Thread dataset / autostart logic (keep your existing behavior) */
     otOperationalDatasetTlvs dataset;
-    otError error = otDatasetGetActiveTlvs(esp_openthread_get_instance(), &dataset);
-    if (error != OT_ERROR_NONE) {
-        // No existing dataset, create a random one
+    otError err = otDatasetGetActiveTlvs(esp_openthread_get_instance(), &dataset);
+    if (err != OT_ERROR_NONE) {
         otOperationalDataset new_dataset;
-        error = otDatasetCreateNewNetwork(esp_openthread_get_instance(), &new_dataset);
-        assert(error == OT_ERROR_NONE);
+        err = otDatasetCreateNewNetwork(esp_openthread_get_instance(), &new_dataset);
+        assert(err == OT_ERROR_NONE);
 
-        // Set network name to ESP-BR-<MAC address>
         uint8_t mac[6];
         if (esp_read_mac(mac, ESP_MAC_BASE) == ESP_OK) {
             char network_name[OT_NETWORK_NAME_MAX_SIZE + 1];
@@ -243,11 +620,16 @@ static void ot_br_init(void *ctx)
     }
 
     ESP_ERROR_CHECK(esp_openthread_auto_start(&dataset));
+
     esp_openthread_lock_release();
 
     vTaskDelete(NULL);
 }
-#endif // CONFIG_OPENTHREAD_BR_AUTO_START
+#endif /* CONFIG_OPENTHREAD_BR_AUTO_START */
+
+/* ------------------------------------------------------------------------ */
+/* Entry point                                                              */
+/* ------------------------------------------------------------------------ */
 
 void launch_openthread_border_router(const esp_openthread_config_t *config,
                                      const esp_rcp_update_config_t *update_config)
@@ -264,7 +646,7 @@ void launch_openthread_border_router(const esp_openthread_config_t *config,
     ESP_ERROR_CHECK(esp_rcp_update_init(update_config));
     esp_ot_register_rcp_handler();
 #else
-    OT_UNUSED_VARIABLE(update_config);
+    (void)update_config;
 #endif
 
     ESP_ERROR_CHECK(esp_openthread_start(config));
@@ -278,6 +660,6 @@ void launch_openthread_border_router(const esp_openthread_config_t *config,
 #endif
 
 #if CONFIG_OPENTHREAD_BR_AUTO_START
-    xTaskCreate(ot_br_init, "ot_br_init", 6144, NULL, 4, NULL);
+    xTaskCreate(ot_br_init, "ot_br_init", 8192, NULL, 4, NULL);
 #endif
 }
