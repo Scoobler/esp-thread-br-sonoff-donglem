@@ -26,6 +26,7 @@
 #include "nvs_flash.h"
 #include "driver/uart.h"
 #include "freertos/FreeRTOS.h"
+#include "led_status.h"
 
 #include "border_router_launch.h"
 #include "esp_br_web.h"
@@ -88,6 +89,7 @@ void app_main(void)
     ESP_ERROR_CHECK(init_spiffs());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+	ESP_ERROR_CHECK(led_status_init());
 
 #if !CONFIG_OPENTHREAD_BR_AUTO_START && CONFIG_EXAMPLE_CONNECT_ETHERNET
 // TODO: Add a mechanism for connecting ETH manually.

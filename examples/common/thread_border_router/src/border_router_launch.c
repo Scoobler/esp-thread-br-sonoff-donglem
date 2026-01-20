@@ -33,6 +33,7 @@
 #include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "led_status.h"
 
 #if CONFIG_EXAMPLE_CONNECT_WIFI
 #include "esp_wifi.h"
@@ -238,6 +239,7 @@ static void on_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data
     if (id == IP_EVENT_ETH_GOT_IP) {
         ESP_LOGI(TAG, "IP_EVENT_ETH_GOT_IP");
         xEventGroupSetBits(s_net_ev, BIT_ETH_GOT_IP);
+		led_status_set_interface(LED_IF_ETH);
         if (!s_backbone_locked) {
             br_lock_backbone(br_find_eth_netif());
         }
@@ -249,6 +251,7 @@ static void on_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data
     if (id == IP_EVENT_STA_GOT_IP) {
         ESP_LOGI(TAG, "IP_EVENT_STA_GOT_IP");
         xEventGroupSetBits(s_net_ev, BIT_WIFI_GOT_IP);
+		led_status_set_interface(LED_IF_WIFI);
         if (!s_backbone_locked) {
             br_lock_backbone(br_find_wifi_netif());
         }
@@ -394,6 +397,7 @@ static bool br_softap_provision_window(uint32_t window_ms, char *out_ssid, size_
     if (out_pass && out_pass_len) out_pass[0] = '\0';
 
     ESP_LOGW(TAG, "Starting SoftAP provisioning window (%u ms)", (unsigned)window_ms);
+	led_status_set_interface(LED_IF_SOFTAP);
     esp_br_wifi_config_start();
 
     /* This blocks until configured OR timeout */
@@ -650,6 +654,7 @@ void launch_openthread_border_router(const esp_openthread_config_t *config,
 #endif
 
     ESP_ERROR_CHECK(esp_openthread_start(config));
+	led_status_set_ot_ready(true);
 
 #if CONFIG_AUTO_UPDATE_RCP
     esp_ot_update_rcp_if_different();
