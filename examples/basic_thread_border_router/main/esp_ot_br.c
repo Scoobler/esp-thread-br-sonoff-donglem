@@ -13,6 +13,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_mac.h"
 #include "esp_openthread.h"
 #include "esp_openthread_border_router.h"
 #include "esp_openthread_netif_glue.h"
@@ -97,7 +98,16 @@ void app_main(void)
 #endif
 
     ESP_ERROR_CHECK(mdns_init());
-    ESP_ERROR_CHECK(mdns_hostname_set("dongle-m-ot-br"));
+
+	uint8_t mac[6];
+	ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_BASE));
+
+	char host[32];
+	snprintf(host, sizeof(host), "donglem-otbr-%02x%02x", mac[4], mac[5]);
+	ESP_ERROR_CHECK(mdns_hostname_set(host));
+
+	ESP_LOGI(TAG, "mDNS hostname: %s.local", host);
+	
 #if CONFIG_OPENTHREAD_CLI_OTA
     esp_set_ota_server_cert((char *)server_cert_pem_start);
 #endif
