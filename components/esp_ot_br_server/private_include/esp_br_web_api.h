@@ -20,10 +20,26 @@ extern "C" {
  */
 void esp_br_web_api_init(void);
 
+/**
+ * @brief REST API semantic version, the single source of truth for this component's REST API version.
+ *
+ * Bump this value, and openapi.yaml's `info.version`, together whenever a REST endpoint is added, removed,
+ * or changed, following semver:
+ *   - MAJOR: an incompatible API change.
+ *   - MINOR: backward-compatible functionality added.
+ *   - PATCH: a backward-compatible bug fix.
+ * Record the change in ../CHANGELOG.md.
+ *
+ * `tools/ci/check_rest_api_version_sync.py` enforces that this value and openapi.yaml's `info.version`
+ * stay in sync.
+ */
+#define ESP_OT_REST_API_VERSION "1.1.0"
+
 /*---------------------------------------------------------------------
             ESP Thread Border Router Wer Server REST API
 ----------------------------------------------------------------------*/
 /* HTTP GET */
+#define ESP_OT_REST_API_WELL_KNOWN_ESP_BR_REST_PATH "/.well-known/thread/esp-br-rest"
 #define ESP_OT_REST_API_DIAGNOSTICS_PATH "/diagnostics"
 #define ESP_OT_REST_API_NODE_PATH "/node"
 #define ESP_OT_REST_API_NODE_RLOC_PATH "/node/rloc"
