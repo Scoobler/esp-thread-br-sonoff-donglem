@@ -4,7 +4,7 @@
 
 The ESP Thread Border Router is equipped with a user-friendly graphical user interface (GUI) that enables users to easily discover, configure, and monitor Thread networks through the web server.
 
-To access the Web GUI, simply enter ``the local IPv4 address`` for the ESP Thread Border Router in your browser window with port ``80`` and the path ``index.html``.
+To access the Web GUI, enter ``http://esp-ot-br.local`` in your browser window.
 
 .. figure:: ../../images/thread-border-router-main-gui.png
    :align: center
@@ -33,12 +33,12 @@ such as:
 
     otbr_web: <========server start========>
 
-    otbr_web: http://192.168.200.98
+    otbr_web: http://esp-ot-br.local
 
     otbr_web: <============================>
 
 
-All REST APIs can be accessed by visiting the IPv4 address of the Thread-Border-Router-Board using the ``HTTP`` on port 80 with the API field specified.
+All REST APIs can be accessed by visiting ``http://esp-ot-br.local`` with the API path specified.
 
 Thread REST APIs
 ----------------
@@ -53,7 +53,7 @@ Entering this link to the browser of Linux machine:
 
 .. code-block::
 
-    http://192.168.200.98:80/node
+    http://esp-ot-br.local/node
 
 
 The following feedback result will display on the browser:
@@ -88,7 +88,7 @@ Entering this link to the browser of Linux machine:
 
 .. code-block::
 
-    http://192.168.200.98:80/available_network
+    http://esp-ot-br.local/available_network
 
 
 The feedback result may appear as follows:
@@ -135,7 +135,7 @@ Entering this link to the browser of Linux machine:
 
 .. code-block::
 
-    http://192.168.200.98:80/get_properties
+    http://esp-ot-br.local/get_properties
 
 
 The feedback result may appear as follows:
@@ -173,7 +173,7 @@ Entering this link to the browser of Linux machine:
 
 .. code-block::
 
-    http://192.168.200.98:80/node_information
+    http://esp-ot-br.local/node_information
 
 
 The feedback result may appear as follows:
@@ -207,7 +207,7 @@ Entering this link to the browser of a Linux machine:
 
 .. code-block::
 
-    http://192.168.200.98:80/topology
+    http://esp-ot-br.local/topology
 
 
 The feedback result may appear as follows:
