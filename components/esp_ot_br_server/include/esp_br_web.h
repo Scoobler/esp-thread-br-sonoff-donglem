@@ -9,9 +9,24 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "esp_event.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+ESP_EVENT_DECLARE_BASE(ESP_BR_WEB_EVENT);
+
+typedef enum {
+    ESP_BR_WEB_EVENT_SERVER_STARTED, /*!< Border router web server is ready to accept connections */
+} esp_br_web_event_t;
+
+/**
+ * @brief Check whether the border router web server has started
+ *
+ * @return true when the web server is ready to accept connections
+ */
+bool esp_br_web_is_server_started(void);
 
 /**
  * @brief Start border router web server, which provides REST APIs and GUI
