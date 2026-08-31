@@ -18,13 +18,17 @@
 #include "lvgl.h"
 #include "bsp/esp-bsp.h"
 #include "core/lv_obj_tree.h"
-#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
-#include "esp_event.h"
+#if CONFIG_OPENTHREAD_BR_START_WEB
 #include "esp_netif.h"
-#include "esp_wifi.h"
+#include "lwip/ip_addr.h"
+#endif
+#if CONFIG_OPENTHREAD_BR_START_WEB || CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "lwip/ip_addr.h"
+#endif
+#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
+#include "esp_event.h"
+#include "esp_wifi.h"
 #endif
 
 lv_obj_t *s_main_page = NULL;
@@ -39,8 +43,11 @@ lv_obj_t *br_m5stack_get_main_page(void)
 static void br_m5stack_display_wifi_config_info(const char *ssid, const char *ip_addr);
 static void br_m5stack_display_wifi_connecting(void);
 static void br_m5stack_update_wifi_connecting_status(const char *status_text, lv_color_t color);
-static void br_m5stack_update_main_page_webgui(void);
 static void br_m5stack_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+#endif
+
+#if CONFIG_OPENTHREAD_BR_START_WEB
+static void br_m5stack_update_main_page_webgui(void);
 #endif
 
 void br_m5stack_bsp_init(void)
@@ -94,6 +101,10 @@ void br_m5stack_create_ui(void)
                       "Failed to create the factoryreset button for main page");
     br_m5stack_add_btn_to_page(s_main_page, factoryreset_btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
 
+#if CONFIG_OPENTHREAD_BR_START_WEB
+    br_m5stack_update_main_page_webgui();
+#endif
+
 #if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
     // Register a single handler for all Wi-Fi/IP events needed to track connection status
     esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, br_m5stack_wifi_event_handler, NULL, NULL);
@@ -121,12 +132,8 @@ exit:
     ESP_ERROR_CHECK(ret);
 }
 
-#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
-static lv_obj_t *s_wifi_config_page = NULL;
-static lv_obj_t *s_wifi_connecting_page = NULL;
-static lv_obj_t *s_wifi_status_label = NULL;
+#if CONFIG_OPENTHREAD_BR_START_WEB
 static lv_obj_t *s_webgui_label = NULL;
-static bool s_wifi_ever_connected = false; /* true once an IP is obtained */
 
 static void br_m5stack_update_main_page_webgui(void)
 {
@@ -158,6 +165,13 @@ static void br_m5stack_update_main_page_webgui(void)
 
     bsp_display_unlock();
 }
+#endif
+
+#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
+static lv_obj_t *s_wifi_config_page = NULL;
+static lv_obj_t *s_wifi_connecting_page = NULL;
+static lv_obj_t *s_wifi_status_label = NULL;
+static bool s_wifi_ever_connected = false; /* true once an IP is obtained */
 
 static void br_m5stack_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -220,7 +234,9 @@ static void br_m5stack_wifi_event_handler(void *arg, esp_event_base_t event_base
 void br_m5stack_show_main_page(void)
 {
     if (s_main_page) {
+#if CONFIG_OPENTHREAD_BR_START_WEB
         br_m5stack_update_main_page_webgui();
+#endif
         br_m5stack_display_page(s_main_page);
     }
 }
