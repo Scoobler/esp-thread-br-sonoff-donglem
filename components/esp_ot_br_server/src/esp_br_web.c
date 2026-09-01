@@ -27,11 +27,14 @@
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 #include "esp_openthread.h"
 #include "esp_openthread_border_router.h"
+#include "esp_openthread_netif_glue.h"
 #include "esp_spiffs.h"
 #include "esp_vfs.h"
 #include "http_parser.h"
+#include "mdns.h"
 #include "protocol_examples_common.h"
 
 #include "openthread/dataset.h"
@@ -45,12 +48,13 @@
 #define MAX_FILE_SIZE_STR "200KB"
 #define SCRATCH_BUFSIZE 1024 /* Scratch buffer size */
 #define VFS_PATH_MAXNUM 15
-#define SERVER_IPV4_LEN 16
 #define FILE_CHUNK_SIZE 4096
 #define WEB_TAG "obtr_web"
 
+ESP_EVENT_DEFINE_BASE(ESP_BR_WEB_EVENT);
+
 /*-----------------------------------------------------
- Note：Http Server
+Note: Http Server
 -----------------------------------------------------*/
 /**
  * @brief The basic configuration for http_server
@@ -64,13 +68,12 @@ typedef struct http_server_data {
  * @brief The basic information for http_server
  */
 typedef struct http_server {
-    httpd_handle_t handle;    /* server handle, unique */
-    http_server_data_t data;  /* data */
-    char ip[SERVER_IPV4_LEN]; /* ip */
-    uint16_t port;            /* port */
+    httpd_handle_t handle;   /* server handle, unique */
+    http_server_data_t data; /* data */
+    uint16_t port;           /* port */
 } http_server_t;
 
-static http_server_t s_server = {NULL, {"", ""}, "", 80}; /* the instance of server */
+static http_server_t s_server = {NULL, {"", ""}, 80}; /* the instance of server */
 
 /**
  * @brief The basic parameter definition for parsing url
@@ -86,7 +89,7 @@ typedef struct request_url {
 } request_url_t;
 
 /*-----------------------------------------------------
- Note：Http Server Thread REST API
+Note: Http Server Thread REST API
 -----------------------------------------------------*/
 static esp_err_t esp_otbr_network_diagnostics_get_handler(httpd_req_t *req);
 static esp_err_t esp_otbr_network_node_get_handler(httpd_req_t *req);
@@ -253,7 +256,7 @@ static httpd_uri_t s_resource_handlers[] = {
 };
 
 /*-----------------------------------------------------
- Note：Http Server WEB-GUI API
+Note: Http Server WEB-GUI API
 -----------------------------------------------------*/
 static esp_err_t esp_otbr_network_properties_get_handler(httpd_req_t *req);
 static esp_err_t esp_otbr_available_networks_get_handler(httpd_req_t *req);
@@ -351,7 +354,7 @@ static httpd_uri_t s_web_gui_handlers[] = {
 };
 
 /*-----------------------------------------------------
- Note：Http Tools
+Note: Http Tools
 -----------------------------------------------------*/
 static cJSON *pack_response(cJSON *error, cJSON *result, cJSON *message)
 {
@@ -456,7 +459,7 @@ exit:
 }
 
 /*-----------------------------------------------------
- Note：Openthread resource API implement
+Note: Openthread resource API implement
 -----------------------------------------------------*/
 /**
  * @brief These APIs would collect corresponding information from Thread network and send to @param req.
@@ -871,7 +874,7 @@ exit:
 }
 
 /*-----------------------------------------------------
- Note：Openthread WEB GUI API implement
+Note: Openthread WEB GUI API implement
 -----------------------------------------------------*/
 /**
  * @brief The API would collect the properties of Thread network and send to @param req.
@@ -1249,7 +1252,7 @@ exit:
 }
 
 /*-----------------------------------------------------
- Note：Handling for Client request
+Note: Handling for Client request
 -----------------------------------------------------*/
 static esp_err_t NOT_FOUND_handler(httpd_req_t *req)
 {
@@ -1473,18 +1476,17 @@ static void ot_web_json_free(void *ptr)
 #endif
 
 /*-----------------------------------------------------
- Note：Server Start
+Note: Server Start
 -----------------------------------------------------*/
 /**
  * @brief Create an HTTP server and register an accessible URI
  *
  * @param[in] base_path A string represents the basic path of http_server files.
- * @param[in] host_ip   A IPvr4 address provided by the connected wifi, recorded by s_server.ip
  * @return
  *      -   ESP_OK: on success
  *      -   ESP_FAIL: on failure
  */
-static httpd_handle_t *start_esp_br_http_server(const char *base_path, const char *host_ip)
+static httpd_handle_t *start_esp_br_http_server(const char *base_path)
 {
     ESP_RETURN_ON_FALSE(base_path, NULL, WEB_TAG, "Invalid http server path");
 
@@ -1495,7 +1497,6 @@ static httpd_handle_t *start_esp_br_http_server(const char *base_path, const cha
     cJSON_InitHooks(&hooks);
 #endif
 
-    strcpy(s_server.ip, host_ip);
     strlcpy(s_server.data.base_path, base_path, ESP_VFS_PATH_MAX + 1);
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -1521,11 +1522,6 @@ static httpd_handle_t *start_esp_br_http_server(const char *base_path, const cha
     httpd_server_register_http_uri(&s_server, s_web_gui_handlers, sizeof(s_web_gui_handlers) / sizeof(httpd_uri_t));
     httpd_register_uri_handler(s_server.handle, &default_uris_get);
 
-    // Show the login address in the console
-    ESP_LOGI(WEB_TAG, "%s\r\n", "<========server start========>");
-    ESP_LOGI(WEB_TAG, "http://%s\r\n", s_server.ip);
-    ESP_LOGI(WEB_TAG, "%s\r\n", "<============================>");
-
     return s_server.handle;
 }
 
@@ -1534,11 +1530,11 @@ void connect_handler(void *arg, esp_event_base_t event_base, int32_t event_id, v
     httpd_handle_t *server = (httpd_handle_t *)arg;
     ESP_RETURN_ON_FALSE(server, , WEB_TAG, "Http server is invalid, failed to start it");
     ESP_LOGI(WEB_TAG, "Start the web server for Openthread Border Router");
-    *server = (httpd_handle_t *)start_esp_br_http_server(base_path, s_server.ip);
+    *server = (httpd_handle_t *)start_esp_br_http_server(base_path);
 }
 
 /*-----------------------------------------------------
- Note：Server Stop
+Note: Server Stop
 -----------------------------------------------------*/
 void stop_httpserver(httpd_handle_t server)
 {
@@ -1559,7 +1555,51 @@ void disconnect_handler(void *arg, esp_event_base_t event_base, int32_t event_id
     *server = NULL;
 }
 
-static bool is_br_web_server_started = false;
+static atomic_bool is_br_web_server_started = ATOMIC_VAR_INIT(false);
+
+bool esp_br_web_is_server_started(void)
+{
+    return atomic_load(&is_br_web_server_started);
+}
+
+static void log_web_server_address(const char *hostname)
+{
+    char hostname_buffer[MDNS_NAME_BUF_LEN] = {0};
+
+    if (hostname || mdns_hostname_get(hostname_buffer) == ESP_OK) {
+        hostname = hostname ? hostname : hostname_buffer;
+        ESP_LOGI(WEB_TAG, "%s\r\n", "<========server address========>");
+        ESP_LOGI(WEB_TAG, "http://%s.local\r\n", hostname);
+        ESP_LOGI(WEB_TAG, "%s\r\n", "<================================>");
+    } else {
+        ESP_LOGW(WEB_TAG, "Cannot get the mDNS hostname, please init mDNS before Web UI");
+    }
+}
+
+static void mdns_hostname_changed_callback(const char *hostname, void *arg)
+{
+    (void)arg;
+
+    if (atomic_load(&is_br_web_server_started)) {
+        log_web_server_address(hostname);
+    }
+}
+
+static void start_web_server(const char *base_path)
+{
+    if (atomic_load(&is_br_web_server_started)) {
+        return;
+    }
+
+    if (start_esp_br_http_server(base_path) != NULL) {
+        atomic_store(&is_br_web_server_started, true);
+        log_web_server_address(NULL);
+        ESP_ERROR_CHECK(esp_event_post(ESP_BR_WEB_EVENT, ESP_BR_WEB_EVENT_SERVER_STARTED, NULL, 0, portMAX_DELAY));
+    } else {
+        ESP_LOGE(WEB_TAG, "Fail to start web server");
+    }
+}
+
 static void handler_got_ip_event(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
 #if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
@@ -1570,24 +1610,40 @@ static void handler_got_ip_event(void *arg, esp_event_base_t event_base, int32_t
     }
 #endif
 
-    if (!is_br_web_server_started) {
-        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        char ipv4_address[SERVER_IPV4_LEN];
-        sprintf((char *)ipv4_address, IPSTR, IP2STR(&event->ip_info.ip));
-        if (start_esp_br_http_server((const char *)arg, (char *)ipv4_address) != NULL) {
-            is_br_web_server_started = true;
-        } else {
-            ESP_LOGE(WEB_TAG, "Fail to start web server");
-        }
-    } else {
-        ESP_LOGW(WEB_TAG, "Web server had already been started");
-    }
+    start_web_server(arg);
 }
+
+#if CONFIG_LWIP_IPV6
+static void handler_got_ip6_event(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
+    // Don't start Thread BR web server if WiFi config mode is active
+    if (esp_br_wifi_config_is_active()) {
+        ESP_LOGI(WEB_TAG, "WiFi config mode is active, skipping Thread BR web server");
+        return;
+    }
+#endif
+
+    ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)event_data;
+    esp_ip6_addr_type_t ip6_type = esp_netif_ip6_get_addr_type(&event->ip6_info.ip);
+
+    // IP_EVENT_GOT_IP6 is emitted for every esp-netif. Ignore the Thread and link-local addresses.
+    if (event->esp_netif == esp_openthread_get_netif() || ip6_type == ESP_IP6_ADDR_IS_LINK_LOCAL) {
+        return;
+    }
+
+    start_web_server(arg);
+}
+#endif
 
 void esp_br_web_start(char *base_path)
 {
+    ESP_ERROR_CHECK(mdns_register_hostname_changed_callback(mdns_hostname_changed_callback, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &handler_got_ip_event, base_path));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &handler_got_ip_event, base_path));
+#if CONFIG_LWIP_IPV6
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_GOT_IP6, &handler_got_ip6_event, base_path));
+#endif
 }
 
 /* 9-digit TAPs only span [0, 999999999], so this is safe to use as an invalid/sentinel value. */

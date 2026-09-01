@@ -5,10 +5,15 @@
  *
  */
 
-#include "br_m5stack_layout.h"
+#include <stdio.h>
+
 #include "br_m5stack_common.h"
 #include "br_m5stack_epskc_page.h"
+#include "br_m5stack_layout.h"
 #include "br_m5stack_screen_dimming.h"
+#if CONFIG_OPENTHREAD_BR_START_WEB
+#include "esp_br_web.h"
+#endif
 #if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
 #include "esp_br_wifi_config.h"
 #endif
@@ -16,15 +21,16 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "lvgl.h"
+#include "mdns.h"
 #include "bsp/esp-bsp.h"
 #include "core/lv_obj_tree.h"
-#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
+#if CONFIG_OPENTHREAD_BR_START_WEB || CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
 #include "esp_event.h"
-#include "esp_netif.h"
-#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "lwip/ip_addr.h"
+#endif
+#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
+#include "esp_wifi.h"
 #endif
 
 lv_obj_t *s_main_page = NULL;
@@ -34,12 +40,16 @@ lv_obj_t *br_m5stack_get_main_page(void)
     return s_main_page;
 }
 
+#if CONFIG_OPENTHREAD_BR_START_WEB
+static void br_m5stack_update_main_page_webgui(const char *hostname);
+static void br_m5stack_web_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static void br_m5stack_hostname_changed_callback(const char *hostname, void *arg);
+#endif
+
 #if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
-// Forward declaration
 static void br_m5stack_display_wifi_config_info(const char *ssid, const char *ip_addr);
 static void br_m5stack_display_wifi_connecting(void);
 static void br_m5stack_update_wifi_connecting_status(const char *status_text, lv_color_t color);
-static void br_m5stack_update_main_page_webgui(void);
 static void br_m5stack_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 #endif
 
@@ -94,8 +104,14 @@ void br_m5stack_create_ui(void)
                       "Failed to create the factoryreset button for main page");
     br_m5stack_add_btn_to_page(s_main_page, factoryreset_btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
 
+#if CONFIG_OPENTHREAD_BR_START_WEB
+    ESP_ERROR_CHECK(mdns_register_hostname_changed_callback(br_m5stack_hostname_changed_callback, NULL));
+    esp_event_handler_instance_register(ESP_BR_WEB_EVENT, ESP_BR_WEB_EVENT_SERVER_STARTED, br_m5stack_web_event_handler,
+                                        NULL, NULL);
+    br_m5stack_update_main_page_webgui(NULL);
+#endif
+
 #if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
-    // Register a single handler for all Wi-Fi/IP events needed to track connection status
     esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, br_m5stack_wifi_event_handler, NULL, NULL);
     esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_STA_START, br_m5stack_wifi_event_handler, NULL, NULL);
     esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, br_m5stack_wifi_event_handler, NULL,
@@ -115,49 +131,79 @@ void br_m5stack_create_ui(void)
         // Normal mode: show main page
         br_m5stack_show_main_page();
     }
+
 #endif
 
 exit:
     ESP_ERROR_CHECK(ret);
 }
 
-#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
-static lv_obj_t *s_wifi_config_page = NULL;
-static lv_obj_t *s_wifi_connecting_page = NULL;
-static lv_obj_t *s_wifi_status_label = NULL;
+#if CONFIG_OPENTHREAD_BR_START_WEB
 static lv_obj_t *s_webgui_label = NULL;
-static bool s_wifi_ever_connected = false; /* true once an IP is obtained */
 
-static void br_m5stack_update_main_page_webgui(void)
+static void br_m5stack_update_main_page_webgui(const char *hostname)
 {
-    char webgui_url[64];
+    static const char webgui_waiting[] = "Web GUI: waiting for server start...";
+    char hostname_buffer[MDNS_NAME_BUF_LEN];
+    char webgui_url[sizeof("Web GUI: http://") + MDNS_NAME_BUF_LEN + sizeof(".local") - 1];
+    const char *webgui_text = webgui_waiting;
 
     if (!s_main_page) {
         return;
     }
 
+    if (esp_br_web_is_server_started()) {
+        if (!hostname) {
+            if (mdns_hostname_get(hostname_buffer) != ESP_OK) {
+                return;
+            }
+            hostname = hostname_buffer;
+        }
+        snprintf(webgui_url, sizeof(webgui_url), "Web GUI: http://%s.local", hostname);
+        webgui_text = webgui_url;
+    }
+
     bsp_display_lock(portMAX_DELAY);
 
-    // Get Wi-Fi STA IP address for webgui
-    esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (sta_netif) {
-        esp_netif_ip_info_t ip_info;
-        if (esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK) {
-            snprintf(webgui_url, sizeof(webgui_url), "Web GUI: http://" IPSTR, IP2STR(&ip_info.ip));
-
-            // Create or update webgui label
-            if (!s_webgui_label) {
-                s_webgui_label = br_m5stack_create_label(s_main_page, webgui_url, &lv_font_montserrat_16,
-                                                         lv_color_make(200, 100, 0), LV_ALIGN_BOTTOM_MID, 0, -65);
-            } else {
-                br_m5stack_modify_label(s_webgui_label, webgui_url);
-                lv_obj_set_style_text_color(s_webgui_label, lv_color_make(200, 100, 0), LV_STATE_DEFAULT);
-            }
-        }
+    // Create or update webgui label
+    if (!s_webgui_label) {
+        s_webgui_label = br_m5stack_create_label(s_main_page, webgui_text, &lv_font_montserrat_16,
+                                                 lv_color_make(200, 100, 0), LV_ALIGN_BOTTOM_MID, 0, -65);
+    } else {
+        br_m5stack_modify_label(s_webgui_label, webgui_text);
+        lv_obj_set_style_text_color(s_webgui_label, lv_color_make(200, 100, 0), LV_STATE_DEFAULT);
+    }
+    if (s_webgui_label) {
+        lv_obj_move_foreground(s_webgui_label);
     }
 
     bsp_display_unlock();
 }
+
+static void br_m5stack_web_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    (void)arg;
+    (void)event_data;
+
+    if (event_base == ESP_BR_WEB_EVENT && event_id == ESP_BR_WEB_EVENT_SERVER_STARTED) {
+        // Use the mDNS hostname for both IPv4 and IPv6 once the server is ready.
+        br_m5stack_update_main_page_webgui(NULL);
+    }
+}
+
+static void br_m5stack_hostname_changed_callback(const char *hostname, void *arg)
+{
+    (void)arg;
+
+    br_m5stack_update_main_page_webgui(hostname);
+}
+#endif
+
+#if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
+static lv_obj_t *s_wifi_config_page = NULL;
+static lv_obj_t *s_wifi_connecting_page = NULL;
+static lv_obj_t *s_wifi_status_label = NULL;
+static bool s_wifi_ever_connected = false; /* true once an IP is obtained */
 
 static void br_m5stack_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -220,7 +266,6 @@ static void br_m5stack_wifi_event_handler(void *arg, esp_event_base_t event_base
 void br_m5stack_show_main_page(void)
 {
     if (s_main_page) {
-        br_m5stack_update_main_page_webgui();
         br_m5stack_display_page(s_main_page);
     }
 }
