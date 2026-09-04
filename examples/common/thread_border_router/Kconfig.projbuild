@@ -21,29 +21,41 @@ menu "ESP Thread Border Router Example"
             bool "Border router M5Stack CoreS3"
             help
                 M5Stack CoreS3
+
+        config ESP_BR_BOARD_SONOFF_DONGLE_M
+            bool "Sonoff Dongle-M"
+            depends on IDF_TARGET_ESP32
+            select EXAMPLE_CONNECT_ETHERNET
+            help
+                Sonoff Dongle-M with a classic ESP32 host, an IP101GA RMII
+                Ethernet PHY, and an external EFR32MG24 RCP over UART.
     endchoice
 
     menu "Board Configuration"
         config PIN_TO_RCP_RESET
             int "Pin to RCP reset"
+            default 12 if ESP_BR_BOARD_SONOFF_DONGLE_M
             default 7 if ESP_BR_BOARD_DEV_KIT
             default 7 if ESP_BR_BOARD_STANDALONE
             default 7 if ESP_BR_BOARD_M5STACK_CORES3
 
         config PIN_TO_RCP_BOOT
             int "Pin to RCP boot"
+            default 15 if ESP_BR_BOARD_SONOFF_DONGLE_M
             default 8 if ESP_BR_BOARD_DEV_KIT
             default 8 if ESP_BR_BOARD_STANDALONE
             default 18 if ESP_BR_BOARD_M5STACK_CORES3
 
         config PIN_TO_RCP_TX
             int "Pin to RCP TX"
+            default 13 if ESP_BR_BOARD_SONOFF_DONGLE_M
             default 17 if ESP_BR_BOARD_DEV_KIT
             default 4 if ESP_BR_BOARD_STANDALONE
             default 10 if ESP_BR_BOARD_M5STACK_CORES3
 
         config PIN_TO_RCP_RX
             int "Pin to RCP RX"
+            default 17 if ESP_BR_BOARD_SONOFF_DONGLE_M
             default 18 if ESP_BR_BOARD_DEV_KIT
             default 5 if ESP_BR_BOARD_STANDALONE
             default 17 if ESP_BR_BOARD_M5STACK_CORES3
@@ -75,10 +87,75 @@ menu "ESP Thread Border Router Example"
             default 11 if ESP_BR_BOARD_DEV_KIT
             default 21 if ESP_BR_BOARD_STANDALONE
             default 37 if ESP_BR_BOARD_M5STACK_CORES3
+
+        config ESP_BR_RCP_UART_PORT
+            int "RCP UART port"
+            range 0 2
+            default 1
+            depends on OPENTHREAD_RADIO_SPINEL_UART
+
+        config ESP_BR_RCP_UART_BAUDRATE
+            int "RCP UART baud rate"
+            range 9600 2000000
+            default 115200 if ESP_BR_BOARD_SONOFF_DONGLE_M
+            default 460800
+            depends on OPENTHREAD_RADIO_SPINEL_UART
+
+        if ESP_BR_BOARD_SONOFF_DONGLE_M
+            config ESP_BR_BOARD_MG24_RESET_GPIO
+                int
+                default 12
+            config ESP_BR_BOARD_MG24_CONTROL_GPIO
+                int
+                default 15
+            config ESP_BR_BOARD_LED_RED_GPIO
+                int
+                default 4
+            config ESP_BR_BOARD_LED_GREEN_GPIO
+                int
+                default 14
+            config ESP_BR_BOARD_LED_BLUE_GPIO
+                int
+                default 2
+            config ESP_BR_BOARD_ETH_MDC_GPIO
+                int
+                default 23
+            config ESP_BR_BOARD_ETH_MDIO_GPIO
+                int
+                default 18
+            config ESP_BR_BOARD_ETH_RESET_GPIO
+                int
+                default 5
+            config ESP_BR_BOARD_ETH_PHY_ADDR
+                int
+                default 1
+            config ESP_BR_BOARD_ETH_RMII_CLK_GPIO
+                int
+                default 0
+            config ESP_BR_BOARD_ETH_RMII_TX_EN_GPIO
+                int
+                default 21
+            config ESP_BR_BOARD_ETH_RMII_TXD0_GPIO
+                int
+                default 19
+            config ESP_BR_BOARD_ETH_RMII_TXD1_GPIO
+                int
+                default 22
+            config ESP_BR_BOARD_ETH_RMII_RXD0_GPIO
+                int
+                default 25
+            config ESP_BR_BOARD_ETH_RMII_RXD1_GPIO
+                int
+                default 26
+            config ESP_BR_BOARD_ETH_RMII_CRS_DV_GPIO
+                int
+                default 27
+        endif
     endmenu
 
     choice ESP_BR_RCP_TARGET
         prompt "Border router RCP target"
+        depends on AUTO_UPDATE_RCP
         default ESP_BR_H2_TARGET
         help
             The board running the Thread RCP.

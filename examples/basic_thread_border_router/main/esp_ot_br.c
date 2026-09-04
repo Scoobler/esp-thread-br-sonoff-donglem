@@ -28,6 +28,7 @@
 #include "freertos/FreeRTOS.h"
 
 #include "border_router_launch.h"
+#include "esp_br_board.h"
 #include "esp_br_web.h"
 
 #define TAG "esp_ot_br"
@@ -54,6 +55,8 @@ static esp_err_t init_spiffs(void)
 
 void app_main(void)
 {
+    esp_br_board_log_profile();
+
     // Used eventfds:
     // * netif
     // * task queue

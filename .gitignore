@@ -30,6 +30,8 @@ components/**/sdkconfig.old
 examples/**/sdkconfig
 examples/**/sdkconfig.old
 examples/**/build
+examples/**/sdkconfig.sonoff_dongle_m
+examples/**/build-sonoff-dongle-m
 
 # gcov coverage reports
 *.gcda
@@ -65,3 +67,6 @@ managed_components
 
 # Docs build output
 docs/_build
+
+# Local hardware-test bundles
+/artifacts/
