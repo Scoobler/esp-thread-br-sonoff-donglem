@@ -3,7 +3,7 @@
 ## Recorded revisions
 
 - Development branch: `codex/upstream-rebase`
-- Stage 1 hardware-profile commit: `9ae35c615097d8d4d63a7af6c46d2fff5a05c2c4`
+- Stage 1 firmware source commit: `5cb0b14d301a5de03e16ceb67919b4a2e477ae33`
 - Upstream baseline used: `ff0d1e3cfd661e146963174c3886a6d32b911b6b`
 - Upstream fetched on 2026-09-04: `0bad9f1f69cebe2e2ab768bbc6f71769a3661e33`
 - Legacy donor (`main` and `legacy/current-working`): `0a1c04447762d31abd7acd8ff28dcc810f041e19`
@@ -67,7 +67,7 @@ Result: SUCCESS, 1424/1424 targets. The application is `0x132440` bytes with 60%
 
 Warnings are limited to the two pre-existing CMake minimum-version deprecations in the project and managed esp-serial-flasher CMake files. There were no new compiler warnings.
 
-The hardware-test bundle is generated locally at `artifacts/sonoff-dongle-m-stage1-9ae35c6/`.
+The hardware-test bundle is generated locally at `artifacts/sonoff-dongle-m-stage1-5cb0b14/`.
 
 ## Legacy delta classification
 
