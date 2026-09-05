@@ -2,7 +2,7 @@
 
 ## Recorded revisions
 
-- Development branch: `codex/upstream-rebase`
+- Development branch: `codex/mg24-rcp`
 - Stage 1 firmware source commit: `ddc0ccef3f5dbf7b794bd5000d4a9d335cab845` (hardware-validated rebased build, 2026-09-05)
 - Previous upstream base: `ff0d1e3cfd661e146963174c3886a6d32b911b6b`
 - Current upstream baseline used: `0bad9f1f69cebe2e2ab768bbc6f71769a3661e33`
