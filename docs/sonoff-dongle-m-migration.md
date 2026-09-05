@@ -153,3 +153,54 @@ matching and diagnostic capture from the stock RCP, followed by a controlled
 115200 no-flow build or configuration if the target proves electrically
 compatible. Do not overwrite the MG24 bootloader or change the host baud rate
 on the validated baseline yet.
+
+
+## Stage 2 safety and compatibility audit
+
+Audit date: 2026-09-05. Fetched `upstream/main` is
+`0bad9f1f69cebe2e2ab768bbc6f71769a3661e33`; legacy donor `main` is
+`0a1c04447762d31abd7acd8ff28dcc810f041e19`. No source or host configuration
+changes were made by this audit.
+
+| Finding | Classification | Consequence |
+| --- | --- | --- |
+| Classic ESP32 host, 16 MB flash | **VERIFIED** | Matches Stage 1 hardware validation |
+| MG24 radio family | **VERIFIED** | Matches stock RCP identity |
+| Exact MG24 order code | **UNKNOWN / MATERIAL CONFLICT** | Public Dongle-M identification says `EFR32MG24A420F1536IM48`; Darkxst candidate says `EFR32MG24A020F1024IM40` |
+| ESP32 UART1, host RX GPIO13, TX GPIO17, 115200 8N1, no flow | **VERIFIED** | Keep the validated baseline unchanged |
+| MG24 USART0 PC1/PC2 | **UNKNOWN** | Candidate pins are not proven from a Dongle-M schematic, marking, or measurement |
+| GPIO12 reset / GPIO15 control-mute labels | **LIKELY** | Local donor and board profile agree, but polarity, timing, and boot strap behavior are unverified |
+| Bootloader entry and installed bootloader type/layout | **UNKNOWN** | Existing firmware defines but does not exercise the control sequence |
+| RF path, FEM, HFXO/crystal, TX power | **UNKNOWN** | Candidate assumptions are not demonstrated for Dongle-M |
+| SWDIO/SWCLK/RESET pads and stock readback | **UNKNOWN** | No verified direct recovery route or protection state |
+
+The inspected Darkxst source is
+`darkxst/silabs-firmware-builder@ac17fd74218acfff796fa3be35e85bea14b0c159`.
+Its manifest selects Simplicity SDK 2024.6.3, GCC 12.2.1.20221205, USART0
+PC1/PC2, 460800 baud, no flow control, HFXO CTUNE 128, and a Gecko
+bootloader. Comparison is therefore: MCU/flash **MISMATCH/UNKNOWN**; UART
+peripheral/pins **UNKNOWN**; baud **MISMATCH**; flow control **MATCH**; RF,
+clock, TX power, bootloader, and GPIO assumptions **UNKNOWN**.
+
+Universal Silicon Labs Flasher documents application-specific reset methods and
+XMODEM transfer, but not this product's internal ESP32-to-MG24 bridge. Sonoff's
+web-console update feature does not prove recovery for this port. The published
+candidate `.gbl` is **not safe to flash**, is not bundled, and no 460800 host
+configuration or RCP manifest was created.
+
+Before replacement testing, establish either a verified existing
+web/ESP32-to-MG24 bootloader path or identified SWDIO, SWCLK, RESET, GND, and
+target-voltage points with a compatible probe. Capture stock RCP version/API,
+Spinel protocol, capabilities, and dataset as needed; record if readback is
+blocked. Sonoff's Zigbee `.gbl` files are not exact Thread rollback images.
+
+The next safe action is physical board identification: read the MG24 top
+marking, trace PC1/PC2 and GPIO12/15, locate SWD pads, and record bootloader
+response without writing flash. Replacement RCP work remains **PENDING
+HARDWARE VALIDATION**.
+
+References: [SONOFF introduction](https://dongle.sonoff.tech/guide/dongle-m/introduction-dongle-m/),
+[SONOFF web console](https://dongle.sonoff.tech/guide/dongle-m/web_console/),
+[Darkxst builder](https://github.com/darkxst/silabs-firmware-builder),
+[Universal Flasher](https://github.com/NabuCasa/universal-silabs-flasher), and
+[Zigbee2MQTT hardware identification](https://github.com/Koenkk/zigbee2mqtt.io/blob/master/docs/guide/adapters/emberznet.md).
