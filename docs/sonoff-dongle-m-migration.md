@@ -111,3 +111,45 @@ The stock-RCP baseline is now the known-good starting point for replacement MG24
 7. **Stage 7 — If proven successful, integrate the replacement RCP image and evaluate current upstream RCP update support.**
 
 The current upstream Web UI remains authoritative; the legacy Web UI is not being ported wholesale.
+
+## Stage 2 replacement MG24 RCP investigation
+
+Investigation snapshot: 2026-09-05. The inspected Darkxst fork source HEAD is
+`ac17fd74218acfff796fa3be35e85bea14b0c159` (`main`, 2026-08-09). Its Sonoff
+manifest is `manifests/sonoff/dongle_plus_mg24_openthread_rcp.yaml` and
+defines: **EFR32MG24A020F1024IM40**, Simplicity SDK **2024.6.3**, GCC
+toolchain **12.2.1.20221205**, OpenThread RCP application with the standard
+Silicon Labs OpenThread/Spinel stack, USART0, PC1 TX/PC2 RX, **460800 baud**,
+and no hardware flow control. The output is a Silicon Labs `.gbl` image; the
+manifest uses a Gecko bootloader interface and the builder recommends the
+Universal-Silabs-Flasher.
+
+A published Darkxst build from commit `59a72cf` shows an artifact named
+`firmware-build-dongle_plus_mg24_openthread_rcp_2.5.3.0_GitHub-1fceb225b_gsdk_2024.6.3_no_flow_460800`, with SHA-256
+`f81799660eb2f71d8d339c916580ed24f262b767a20453033b15bbca43d51fd4`. This
+identifies a usable candidate provenance, but not hardware compatibility.
+
+### Compatibility decision
+
+This is **not yet a safe drop-in candidate** for the Sonoff Dongle-M. The
+manifest targets a named external Sonoff Dongle Plus MG24 board and does not
+prove the same MG24 part, RF/antenna configuration, bootloader layout, reset
+path, or UART pins as the Dongle-M’s onboard radio. It also selects 460800 baud,
+while the validated ESP32 host baseline is UART1 GPIO13/GPIO17 at 115200 8N1
+without flow control. The candidate must therefore be treated as an isolated
+lab image until the physical MG24 part, RF design, bootloader, UART routing,
+Spinel startup, and capability response are verified.
+
+Nabu Casa is the upstream builder lineage. Its current release notes show the
+project moving from Gecko SDK 4.5.0 to Simplicity SDK 2025.6.2 for its Thread
+firmware, while the inspected Darkxst Sonoff manifest remains on Simplicity SDK
+2024.6.3. The builder source is Apache-2.0; Silicon Labs SDK, tools,
+bootloader, and generated-image redistribution terms must be reviewed
+separately before bundling any resulting `.gbl` in this project.
+
+No candidate image has been flashed, bundled, or hardware-validated.
+**PENDING HARDWARE VALIDATION.** Next work is source-level part/board
+matching and diagnostic capture from the stock RCP, followed by a controlled
+115200 no-flow build or configuration if the target proves electrically
+compatible. Do not overwrite the MG24 bootloader or change the host baud rate
+on the validated baseline yet.
