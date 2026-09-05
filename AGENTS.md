@@ -4,6 +4,12 @@
 
 Create a maintainable Sonoff Dongle-M port from the current `espressif/esp-thread-br` upstream codebase.
 
+The canonical upstream repository is `https://github.com/espressif/esp-thread-br`.
+`upstream/main` is the live canonical development baseline; any recorded SHA is
+historical evidence, not a permanent pin. Before each new migration or feature
+milestone, fetch upstream, inspect relevant changes, and prefer rebasing the
+clean Dongle-M patchset onto current `upstream/main` while practical.
+
 This checkout is already on a clean upstream-derived development branch. Treat the existing customised branches in this repository as **legacy donor/reference implementations only**. Do not merge them wholesale into the new upstream-based branch.
 
 The immediate goal is to establish a clean, supportable Dongle-M hardware and connectivity baseline on current upstream. Web UI enhancements, deeper RCP diagnostics, replacement MG24 RCP firmware, and automatic RCP flashing are later stages.
@@ -37,6 +43,16 @@ Do **not**:
 Use the legacy branches only for comparison and selective reimplementation.
 
 Port behaviour, not history.
+
+Stage 1 hardware validation is PASSED on a real Sonoff Dongle-M. Verified facts
+include the classic ESP32 host, 16 MB flash, IP101GA RMII wiring, MG24 UART1
+RX13/TX17 at 115200 8N1 without flow control, stock-MG24 Spinel/OpenThread
+operation, and Ethernet operation. Preserve the validation evidence in the
+migration document and do not treat unverified hardware assumptions as facts.
+
+The modern upstream Web UI is the preferred UI architecture and has been
+validated on the Dongle-M. Do not port the legacy Web UI wholesale. Make UI
+changes only for concrete missing functionality, and keep them incremental.
 
 ## Migration Philosophy
 
