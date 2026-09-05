@@ -1,4 +1,4 @@
-set(requires esp_ot_cli_extension openthread protocol_examples_common vfs esp_wifi esp_eth esp_rcp_update ot_examples_common)
+set(requires esp_ot_cli_extension openthread protocol_examples_common vfs esp_wifi esp_eth esp_rcp_update ot_examples_common nvs_flash driver)
 
 if(CONFIG_OPENTHREAD_CLI_OTA)
     list(APPEND requires esp_http_client esp_br_http_ota)

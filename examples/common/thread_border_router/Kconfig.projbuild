@@ -102,6 +102,34 @@ menu "ESP Thread Border Router Example"
             depends on OPENTHREAD_RADIO_SPINEL_UART
 
         if ESP_BR_BOARD_SONOFF_DONGLE_M
+            config ESP_BR_DONGLE_M_ETHERNET_WAIT_MS
+                int "Dongle-M Ethernet startup wait (ms)"
+                default 10000
+                range 1000 60000
+            config ESP_BR_DONGLE_M_WIFI_WAIT_MS
+                int "Dongle-M Wi-Fi startup wait (ms)"
+                default 12000
+                range 1000 60000
+            config ESP_BR_DONGLE_M_WIFI_FAIL_THRESHOLD
+                int "Dongle-M Wi-Fi failure threshold"
+                default 5
+                range 1 20
+            config ESP_BR_DONGLE_M_SOFTAP_WINDOW_MS
+                int "Dongle-M provisioning SoftAP window (ms)"
+                default 180000
+                range 10000 600000
+            config ESP_BR_DONGLE_M_LED_PULSE_INTERVAL_MS
+                int "Dongle-M LED pulse interval (ms)"
+                default 2000
+                range 250 60000
+            config ESP_BR_DONGLE_M_LED_PULSE_DURATION_MS
+                int "Dongle-M LED pulse duration (ms)"
+                default 200
+                range 50 5000
+            config ESP_BR_DONGLE_M_LED_DETACHED_SUPPRESS_MS
+                int "Dongle-M detached LED suppression after OT ready (ms)"
+                default 15000
+                range 0 120000
             config ESP_BR_BOARD_MG24_RESET_GPIO
                 int
                 default 12

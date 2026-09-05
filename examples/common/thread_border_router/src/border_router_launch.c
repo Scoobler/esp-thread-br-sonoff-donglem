@@ -6,6 +6,8 @@
  */
 
 #include "border_router_launch.h"
+#include "dongle_m_led.h"
+#include "dongle_m_network.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -58,7 +60,7 @@
 
 #define TAG "esp_ot_br"
 
-#if CONFIG_EXAMPLE_CONNECT_WIFI && CONFIG_OPENTHREAD_BR_AUTO_START
+#if CONFIG_EXAMPLE_CONNECT_WIFI && CONFIG_OPENTHREAD_BR_AUTO_START && !CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
 /**
  * @brief Save Wi-Fi configuration to NVS and connect
  *
@@ -98,6 +100,17 @@ static bool wifi_config_save_and_connect(const char *ssid, const char *password)
 #if CONFIG_OPENTHREAD_BR_AUTO_START
 static void ot_br_init(void *ctx)
 {
+#if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
+    esp_netif_t *selected_backbone = NULL;
+    ESP_ERROR_CHECK(dongle_m_network_select_backbone(&selected_backbone));
+    esp_openthread_lock_acquire(portMAX_DELAY);
+    esp_openthread_set_backbone_netif(selected_backbone);
+    ESP_ERROR_CHECK(esp_openthread_border_router_init());
+#if CONFIG_OPENTHREAD_CLI_WIFI
+    esp_ot_wifi_border_router_init_flag_set(true);
+#endif
+    esp_openthread_lock_release();
+#else
 #if CONFIG_EXAMPLE_CONNECT_WIFI
     // Wi-Fi connection mode - two ways to get Wi-Fi parameters:
     // 1. CONFIG_OPENTHREAD_BR_SOFTAP_SETUP: via SoftAP Web interface
@@ -151,6 +164,7 @@ static void ot_br_init(void *ctx)
 #if CONFIG_EXAMPLE_CONNECT_WIFI
     esp_ot_wifi_border_router_init_flag_set(true);
 #endif
+#endif
 
     otOperationalDatasetTlvs dataset;
     otError error = otDatasetGetActiveTlvs(esp_openthread_get_instance(), &dataset);
@@ -172,6 +186,9 @@ static void ot_br_init(void *ctx)
         ESP_LOGI(TAG, "Created new random Thread dataset");
     }
     ESP_ERROR_CHECK(esp_openthread_auto_start(&dataset));
+#if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
+    dongle_m_led_set_thread_ready(true);
+#endif
     esp_openthread_lock_release();
 
     vTaskDelete(NULL);
@@ -197,6 +214,9 @@ void launch_openthread_border_router(const esp_openthread_config_t *config,
 #endif
 
     ESP_ERROR_CHECK(esp_openthread_start(config));
+#if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
+    dongle_m_led_init();
+#endif
 #if CONFIG_AUTO_UPDATE_RCP
     esp_ot_update_rcp_if_different();
 #endif
