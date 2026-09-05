@@ -3,14 +3,18 @@
 ## Recorded revisions
 
 - Development branch: `codex/upstream-rebase`
-- Stage 1 firmware source commit: `5cb0b14d301a5de03e16ceb67919b4a2e477ae33`
-- Upstream baseline used: `ff0d1e3cfd661e146963174c3886a6d32b911b6b`
-- Upstream fetched on 2026-09-04: `0bad9f1f69cebe2e2ab768bbc6f71769a3661e33`
+- Stage 1 firmware source commit: `488c888` (rebased build, 2026-09-05)
+- Previous upstream base: `ff0d1e3cfd661e146963174c3886a6d32b911b6b`
+- Current upstream baseline used: `0bad9f1f69cebe2e2ab768bbc6f71769a3661e33`
 - Legacy donor (`main` and `legacy/current-working`): `0a1c04447762d31abd7acd8ff28dcc810f041e19`
 - Legacy upstream ancestor: `b8bffd291b8608533a20c7a2406e1b493d953bce`
 - Toolchain: ESP-IDF v5.5.4
 
-The branch remains based on `ff0d1e3`. The newer fetched upstream commits are Web UI/mDNS changes and were recorded but not merged or rebased into this milestone.
+The Dongle-M patchset was rebased onto current `upstream/main` without source
+conflicts. The four absorbed upstream commits are `325e0c6` (Web UI
+configuration guards), `78c272f` (IPv6 Web UI and mDNS updates), `20121cf`
+(M5Stack Web UI hostname updates), and `20d0d57` (mDNS hostname documentation).
+These modern upstream Web UI changes were preserved; no legacy UI was ported.
 
 ## Stage 1 hardware-profile decision
 
@@ -63,11 +67,12 @@ idf.py -B build-sonoff-dongle-m \
   build
 ```
 
-Result: SUCCESS, 1424/1424 targets. The application is `0x132440` bytes with 60% of the smallest app partition free.
+Result: SUCCESS, 1424/1424 targets. The application is `0x132700` bytes with 60% of the smallest app partition free.
 
 Warnings are limited to the two pre-existing CMake minimum-version deprecations in the project and managed esp-serial-flasher CMake files. There were no new compiler warnings.
 
-The hardware-test bundle is generated locally at `artifacts/sonoff-dongle-m-stage1-5cb0b14/`.
+The rebased hardware-test bundle is generated locally at
+`artifacts/sonoff-dongle-m-rebased-488c888/`.
 
 ## Legacy delta classification
 
@@ -81,8 +86,19 @@ The hardware-test bundle is generated locally at `artifacts/sonoff-dongle-m-stag
 
 ## Hardware status and next gate
 
-**PENDING HARDWARE VALIDATION**
+**STAGE 1 HARDWARE VALIDATION: PASSED**
 
-Required initial evidence is limited to ESP32 boot/flash detection, named-profile logging, stock MG24 communication at 115200, Spinel initialization or its exact error, IP101GA initialization, and confirmation that no MG24 update occurs.
+Physical validation was completed on 2026-09-04 using the pre-rebase Stage 1
+image. The real device verified the classic ESP32 rev 3.1 host, 16 MB DIO/40
+MHz flash, UART1 GPIO13/GPIO17 at 115200 8N1 without flow control, stock MG24
+Spinel/OpenThread startup and attachment, IP101GA RMII Ethernet with DHCP and
+IPv6, current upstream Web UI, dataset creation, border routing, NAT64, and
+Leader state. No panic, watchdog, reboot loop, or Spinel framing/timeout error
+was observed. This rebased build still requires a repeat of the physical smoke
+test because hardware validation cannot be inferred from a host-only build.
+
+The next hardware handoff is therefore **PENDING HARDWARE VALIDATION** for the
+rebased image. Do not commission the test unit into the production Thread
+network until that smoke test is reported.
 
 Do not commission the test unit into the production Thread network yet. Do not begin connectivity-policy, LED-policy, diagnostics UI, replacement RCP, or automatic RCP-update work until this hardware gate is reported.
