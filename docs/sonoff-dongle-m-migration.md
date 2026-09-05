@@ -2,7 +2,8 @@
 
 ## Recorded revisions
 
-- Development branch: `codex/upstream-rebase`
+- Development branch: `codex/donglem-network-led`
+- Network/LED milestone source commit: `3ffd86d1db9e03dc69fa9fa93df447484403af51` (work started from this clean baseline)
 - Stage 1 firmware source commit: `ddc0ccef3f5dbf7b794bd5000d4a9d335cab845` (hardware-validated rebased build, 2026-09-05)
 - Previous upstream base: `ff0d1e3cfd661e146963174c3886a6d32b911b6b`
 - Current upstream baseline used: `0bad9f1f69cebe2e2ab768bbc6f71769a3661e33`
@@ -77,12 +78,39 @@ The rebased hardware-test bundle is generated locally at
 ## Legacy delta classification
 
 - Hardware-required: classic ESP32 target, 16 MB flash, stock-MG24 UART, IP101GA RMII, RGB GPIOs, and MG24 control GPIO definitions. Reimplemented in this milestone.
-- Connectivity-required: Ethernet-first, Wi-Fi fallback, bounded recovery SoftAP, and deterministic backbone selection. Deferred.
-- Product behavior: RGB self-test/interface color/Thread pulse policy. Deferred; physical pins only are defined.
+- Connectivity-required: Ethernet-first, saved-Wi-Fi fallback, bounded recovery SoftAP, NVS failure tracking, and deterministic per-boot backbone selection. Implemented in this milestone; hardware validation is pending.
+- Product behavior: RGB self-test, Ethernet/Wi-Fi/SoftAP base colors, and attached/detached Thread pulse policy. Implemented in this milestone; hardware validation is pending.
 - Web UI/UX and dataset handling: deferred; no legacy frontend files were copied.
 - Diagnostic: RCP capability/version display. Deferred to Stage 2.
 - Obsolete/superseded: legacy hard-coded generic-file UART values and monolithic frontend architecture. Not ported.
 - Later-stage RCP work: replacement firmware and automatic MG24 flashing. Explicitly excluded.
+
+## Network and LED milestone
+
+This milestone is based on upstream `0bad9f1f69cebe2e2ab768bbc6f71769a3661e33`,
+ESP-IDF v5.5.4, and legacy donor reference `0a1c04447762d31abd7acd8ff28dcc810f041e19`.
+The implementation is isolated behind `CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M`;
+non-Dongle builds retain the upstream launch path.
+
+The Dongle-M startup policy is:
+
+1. Start Ethernet and wait up to `CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS` (10 s by default).
+2. If Ethernet has an IP, select `ETH_DEF` and lock that pointer as the OpenThread backbone.
+3. Otherwise use saved Wi-Fi credentials, if present, and wait up to 12 s by default.
+4. If no credentials exist, or the saved connection repeatedly fails, use the current upstream Web UI SoftAP for a bounded 3-minute provisioning window.
+5. Reboot after an unsuccessful bounded attempt; a successful Wi-Fi connection resets the failure count.
+
+The NVS namespace is `br`, with `fail_count` (`u8`) and `last_ssid` keys.
+Changing the configured SSID resets the failure count, and the recovery threshold
+is five failed boots by default. The selected backbone is authoritative for that
+boot; a later interface IP event does not replace it. Automatic RCP update and
+RCP partition changes remain excluded.
+
+The RGB policy is in a separate Dongle-M component. It performs a red/green/blue
+self-test, shows blue for Ethernet, orange for Wi-Fi, and purple for SoftAP, then
+pulses green when Thread is attached or red when detached. The detached pulse is
+suppressed for 15 seconds after OpenThread becomes ready. GPIO definitions remain
+in the board profile and the policy timing is Kconfig-configurable.
 
 ## Hardware status and next gate
 
@@ -98,6 +126,10 @@ was observed.
 
 The rebased build at source HEAD `ddc0ccef3f5dbf7b794bd5000d4a9d335cab845` was subsequently validated on real Sonoff Dongle-M hardware. The validation confirmed classic ESP32 boot, 16 MB DIO/40 MHz flash, the Dongle-M board profile, stock MG24 Spinel/OpenThread operation over UART1 GPIO13/GPIO17 at 115200 8N1 without flow control, supported `RX_ON_WHEN_IDLE` compatibility, Ethernet/DHCP/IPv6/mDNS, current upstream Web UI, NAT64, and restoration of saved Thread state. No panic, reboot loop, or RCP framing errors were observed.
 
+The network/LED milestone build is **PENDING HARDWARE VALIDATION**. The user must
+verify the Ethernet-first selection, Wi-Fi fallback, SoftAP recovery threshold,
+backbone lock, RGB indications, and Thread pulse timing on a real Dongle-M.
+
 The stock-RCP baseline is now the known-good starting point for replacement MG24 RCP investigation. Hardware tests for replacement firmware remain **PENDING HARDWARE VALIDATION**.
 
 ## Current migration path
@@ -106,8 +138,8 @@ The stock-RCP baseline is now the known-good starting point for replacement MG24
 2. **Stage 2 — Replacement EFR32MG24 OpenThread RCP investigation and A/B test:** **CURRENT**.
 3. **Stage 3 — BILRESA sleepy-end-device latency A/B test** using stock and replacement RCP firmware.
 4. **Stage 4 — Restore the normal upstream `RX_ON_WHEN_IDLE` requirement only if the replacement RCP genuinely advertises and supports it.**
-5. **Stage 5 — Restore Dongle-M Wi-Fi fallback and deterministic backbone selection using current upstream architecture.**
-6. **Stage 6 — Restore Dongle-M LED status behaviour separately from networking policy.**
+5. **Stage 5 — Restore Dongle-M Wi-Fi fallback and deterministic backbone selection using current upstream architecture:** **IMPLEMENTED; HARDWARE VALIDATION PENDING**.
+6. **Stage 6 — Restore Dongle-M LED status behaviour separately from networking policy:** **IMPLEMENTED; HARDWARE VALIDATION PENDING**.
 7. **Stage 7 — If proven successful, integrate the replacement RCP image and evaluate current upstream RCP update support.**
 
 The current upstream Web UI remains authoritative; the legacy Web UI is not being ported wholesale.
