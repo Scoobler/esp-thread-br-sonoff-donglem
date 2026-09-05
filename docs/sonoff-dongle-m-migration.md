@@ -3,7 +3,7 @@
 ## Recorded revisions
 
 - Development branch: `codex/upstream-rebase`
-- Stage 1 firmware source commit: `488c888` (rebased build, 2026-09-05)
+- Stage 1 firmware source commit: `ddc0ccef3f5dbf7b794bd5000d4a9d335cab845` (hardware-validated rebased build, 2026-09-05)
 - Previous upstream base: `ff0d1e3cfd661e146963174c3886a6d32b911b6b`
 - Current upstream baseline used: `0bad9f1f69cebe2e2ab768bbc6f71769a3661e33`
 - Legacy donor (`main` and `legacy/current-working`): `0a1c04447762d31abd7acd8ff28dcc810f041e19`
@@ -94,11 +94,20 @@ MHz flash, UART1 GPIO13/GPIO17 at 115200 8N1 without flow control, stock MG24
 Spinel/OpenThread startup and attachment, IP101GA RMII Ethernet with DHCP and
 IPv6, current upstream Web UI, dataset creation, border routing, NAT64, and
 Leader state. No panic, watchdog, reboot loop, or Spinel framing/timeout error
-was observed. This rebased build still requires a repeat of the physical smoke
-test because hardware validation cannot be inferred from a host-only build.
+was observed.
 
-The next hardware handoff is therefore **PENDING HARDWARE VALIDATION** for the
-rebased image. Do not commission the test unit into the production Thread
-network until that smoke test is reported.
+The rebased build at source HEAD `ddc0ccef3f5dbf7b794bd5000d4a9d335cab845` was subsequently validated on real Sonoff Dongle-M hardware. The validation confirmed classic ESP32 boot, 16 MB DIO/40 MHz flash, the Dongle-M board profile, stock MG24 Spinel/OpenThread operation over UART1 GPIO13/GPIO17 at 115200 8N1 without flow control, supported `RX_ON_WHEN_IDLE` compatibility, Ethernet/DHCP/IPv6/mDNS, current upstream Web UI, NAT64, and restoration of saved Thread state. No panic, reboot loop, or RCP framing errors were observed.
 
-Do not commission the test unit into the production Thread network yet. Do not begin connectivity-policy, LED-policy, diagnostics UI, replacement RCP, or automatic RCP-update work until this hardware gate is reported.
+The stock-RCP baseline is now the known-good starting point for replacement MG24 RCP investigation. Hardware tests for replacement firmware remain **PENDING HARDWARE VALIDATION**.
+
+## Current migration path
+
+1. **Stage 1 — Current upstream plus Dongle-M board support:** **HARDWARE VALIDATED**.
+2. **Stage 2 — Replacement EFR32MG24 OpenThread RCP investigation and A/B test:** **CURRENT**.
+3. **Stage 3 — BILRESA sleepy-end-device latency A/B test** using stock and replacement RCP firmware.
+4. **Stage 4 — Restore the normal upstream `RX_ON_WHEN_IDLE` requirement only if the replacement RCP genuinely advertises and supports it.**
+5. **Stage 5 — Restore Dongle-M Wi-Fi fallback and deterministic backbone selection using current upstream architecture.**
+6. **Stage 6 — Restore Dongle-M LED status behaviour separately from networking policy.**
+7. **Stage 7 — If proven successful, integrate the replacement RCP image and evaluate current upstream RCP update support.**
+
+The current upstream Web UI remains authoritative; the legacy Web UI is not being ported wholesale.

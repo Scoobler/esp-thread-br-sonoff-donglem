@@ -21,9 +21,15 @@ Prefer current upstream architecture and APIs wherever possible.
 Expected repository roles:
 
 - `upstream/main` — official Espressif `esp-thread-br` source.
-- `codex/upstream-rebase` — clean upstream-derived development branch; this is the active migration branch.
+- `codex/upstream-rebase` — known-good, hardware-validated upstream-derived Dongle-M baseline.
+- `codex/mg24-rcp` — isolated branch for replacement EFR32MG24 RCP investigation and A/B testing.
 - `main` — legacy customised Sonoff Dongle-M implementation; reference/donor only.
 - `legacy/current-working` — frozen known-working legacy snapshot; reference/donor only.
+
+`origin/main` remains the public legacy firmware branch and must not be
+replaced by migration work unless explicitly decided later. The canonical
+upstream repository is `https://github.com/espressif/esp-thread-br`, and
+`upstream/main` is its live development baseline.
 
 At the start of this migration, the clean development branch was created directly from upstream commit `cd0b64f`.
 
@@ -44,11 +50,12 @@ Use the legacy branches only for comparison and selective reimplementation.
 
 Port behaviour, not history.
 
-Stage 1 hardware validation is PASSED on a real Sonoff Dongle-M. Verified facts
+Stage 1 hardware validation is PASSED on a real Sonoff Dongle-M. The current
+validated source HEAD is `ddc0ccef3f5dbf7b794bd5000d4a9d335cab845`, based on
+upstream `0bad9f1f69cebe2e2ab768bbc6f71769a3661e33`. Verified facts
 include the classic ESP32 host, 16 MB flash, IP101GA RMII wiring, MG24 UART1
 RX13/TX17 at 115200 8N1 without flow control, stock-MG24 Spinel/OpenThread
-operation, and Ethernet operation. Preserve the validation evidence in the
-migration document and do not treat unverified hardware assumptions as facts.
+operation; Ethernet, DHCP, IPv6, mDNS, NAT64, saved Thread-state restoration, and current upstream Web UI operation; the stock MG24 does not advertise `RX_ON_WHEN_IDLE`, while the supported compatibility Kconfig allows current upstream to work. Preserve the validation evidence in the migration document and do not treat unverified hardware assumptions as facts.
 
 The modern upstream Web UI is the preferred UI architecture and has been
 validated on the Dongle-M. Do not port the legacy Web UI wholesale. Make UI
@@ -302,6 +309,19 @@ Instrument first. Change RCP firmware later.
 # Migration Stages
 
 Keep the migration staged.
+
+## Current migration stages
+
+1. **Stage 1 — Current upstream plus Dongle-M board support:** hardware validated.
+2. **Stage 2 — Replacement EFR32MG24 RCP investigation and A/B test:** current.
+3. **Stage 3 — BILRESA sleepy-end-device latency A/B test** with stock and replacement RCPs.
+4. **Stage 4 — Restore `RX_ON_WHEN_IDLE` only if the replacement RCP supports it.**
+5. **Stage 5 — Restore Wi-Fi fallback and deterministic backbone selection.**
+6. **Stage 6 — Restore LED status behaviour separately from networking policy.**
+7. **Stage 7 — Integrate a proven RCP and evaluate current upstream RCP update support.**
+
+The modern upstream Web UI remains authoritative; do not port the legacy Web UI
+wholesale.
 
 ## Stage 1 — Clean upstream Dongle-M baseline
 
