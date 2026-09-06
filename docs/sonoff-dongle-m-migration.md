@@ -150,6 +150,60 @@ backbone lock, active-high RGB indications, and Thread pulse timing on a real Do
 
 The stock-RCP baseline is now the known-good starting point for replacement MG24 RCP investigation. Hardware tests for replacement firmware remain **PENDING HARDWARE VALIDATION**.
 
+## Runtime backbone failover investigation (2026-09-06)
+
+Investigation only: no runtime source, RCP, LED, provisioning, or firmware artifact changed. Audit inputs were codex/donglem-network-led at 7c79d932aafd22b77b88eafbe6b57dabb64a9103, upstream/main at 0bad9f1f69cebe2e2ab768bbc6f71769a3661e33, and ESP-IDF v5.5.4 at 735507283d5b2f9fb363a1901172dbd9e847945d.
+
+### Sources and lifecycle
+
+Inspected app_main; launch_openthread_border_router; dongle_m_network; ESP-IDF esp_openthread.cpp, esp_openthread_netif_glue.c, esp_openthread_udp.c, esp_openthread_border_router.h, esp_openthread_lock.h, and the shipped libopenthread_br.a; OpenThread border_routing.h, border_routing_api.cpp, infra_if.cpp; the ESP-IDF ot_examples_br and protocol_examples_common Wi-Fi/Ethernet helpers; and README_MDNS.md.
+
+The lifecycle is: app_main initializes NVS, SPIFFS, esp-netif, the event loop, mDNS, and Web UI. The Dongle-M launcher selects and waits for the backbone, calls esp_openthread_set_backbone_netif before esp_openthread_start, and the ESP-IDF worker initializes OpenThread, attaches the Thread netif, and enters the main loop. The ot_br_init task acquires the normal OpenThread lock, calls esp_openthread_border_router_init, loads/creates the dataset, and calls esp_openthread_auto_start, which enables IPv6 and Thread but does not select the backbone.
+
+### Findings
+
+esp_openthread_set_backbone_netif has an explicit contract: it must be called before esp_openthread_init. The public ESP-IDF API has no post-init backbone setter or complete rebind operation. The ESP glue also reads esp_openthread_get_backbone_netif for UDP binding, host-interface classification, link-layer lookup, and infrastructure traffic. Changing only an OpenThread interface index would leave platform state inconsistent. Calling the setter after start, Border Router init, or Thread attachment is unsupported; Border Router deinit does not make the pre-init contract valid.
+
+OpenThread core does expose a related facility. In this revision, otBorderRoutingInit(instance, if_index, is_running) is documented as re-initializable: changing the index stops Border Routing and mDNS-related operations on the old interface before restarting on the new one. otBorderRoutingGetInfraIfInfo reports the configured index and running state, while otPlatInfraIfStateChanged updates running state only for that index. This cannot safely be used by the current application alone because the Espressif netif pointer and OpenThread index cannot be changed atomically through public APIs.
+
+Conclusion: live backbone replacement is NOT SUPPORTED by the current public Espressif ESP-IDF integration as an application-only operation. The core API supports infrastructure-manager reinitialization, but the ESP wrapper does not expose the complete safe platform rebind. No checked-out Espressif example implements Ethernet/Wi-Fi backbone replacement at runtime.
+
+ESP-IDF provides separate health events: Ethernet ETH_EVENT_CONNECTED/DISCONNECTED and IP_EVENT_ETH_GOT_IP/LOST_IP; Wi-Fi WIFI_EVENT_STA_CONNECTED/DISCONNECTED and IP_EVENT_STA_GOT_IP/LOST_IP. Future policy should require link/association and usable IP, including required IPv6 state, with timers. The OpenThread infra state signal only describes the selected index and cannot select another ESP netif.
+
+Wi-Fi standby is feasible at the classic ESP32 esp-netif/Wi-Fi level, but is unproven for this OTBR integration. The current app does not associate Wi-Fi when Ethernet wins, and no checked-in Espressif OTBR example validates standby. It requires a hardware gate for coexistence, route priority, IPv6, mDNS, resource use, and interface classification.
+
+### Recommended future architecture
+
+Retain boot-only deterministic selection until a reviewed Espressif-supported platform rebind API exists. That API should atomically:
+
+1. confirm candidate link, IPv4, and required IPv6;
+2. update the ESP backbone-netif pointer used by platform callbacks;
+3. call otBorderRoutingInit(instance, new_if_index, true) in OpenThread task context;
+4. let OpenThread stop old-interface BR/mDNS activity and restart on the new index; and
+5. refresh or restart host-side NAT64, DNS64, mDNS, RA, ND, route, and service bindings outside OpenThread.
+
+Callbacks should enqueue observations only. One state-machine task should hold esp_openthread_lock_acquire(portMAX_DELAY) for ordinary OT calls. Use the task-switching lock only when the exact operation yields into lwIP, and release/reacquire it exactly as the ESP-IDF port does. Never release it from another task; incorrect ownership asserts/crashes.
+
+A full esp_openthread_stop/start cycle is not a suitable first solution: ESP-IDF refuses to stop while Thread is active and the v5.5.4 radio path reports RCP deinitialization as unsupported. A correct in-process rebind should preserve Thread radio, dataset, RCP, and attachment because the OpenThread index-switch lifecycle is scoped to infrastructure services. This is a design expectation, not Dongle-M hardware evidence.
+
+Validate RA/RS, ND, on-link/OMR routes, discovered prefixes, NAT64 prefix and sockets, DNS64 reachability, OpenThread mDNS/DNS-SD, and the separate ESP-IDF mDNS responder. If atomic rebind cannot be obtained, retain boot-only selection and report infrastructure loss. Do not call the undocumented post-init setter or partially update the OT index.
+
+### Proposed state machine and acceptance tests
+
+Not implemented:
+
+    ETH_ACTIVE -- ETH unusable 5-10 s --> WIFI_CANDIDATE
+    WIFI_CANDIDATE -- Wi-Fi usable --> WIFI_ACTIVE
+    WIFI_CANDIDATE -- bounded timeout --> INFRA_DEGRADED (retain Thread)
+    WIFI_ACTIVE -- unusable --> ETH_CANDIDATE or INFRA_DEGRADED
+    ETH_CANDIDATE -- healthy 20-30 s --> ETH_ACTIVE
+
+Maintain one active_backbone; change the LED only after successful rebind and ignore late non-selected events except as health observations. Do not immediately preempt Wi-Fi when Ethernet returns.
+
+Later hardware tests must cover both promotion directions, standby disabled and enabled, link flapping, DHCP renewal, IPv6-only loss, and both interfaces unavailable. Verify LED, IPv4/IPv6, RA/ND, NAT64, DNS64, mDNS, routes, no stale bindings or duplicate advertisements, no lock/watchdog/RCP failure, and continued Thread attachment. Repeat BILRESA sleepy-device presses during and after failover with no multi-second or approximately 30-second delay. Reboot after each path and verify dataset and Wi-Fi persistence.
+
+Conclusion: DO NOT implement runtime failover yet. Obtain or design a reviewed Espressif platform-level rebind API and test it independently from LED and provisioning policy.
+
 ## Current migration path
 
 1. **Stage 1 — Current upstream plus Dongle-M board support:** **HARDWARE VALIDATED**.
