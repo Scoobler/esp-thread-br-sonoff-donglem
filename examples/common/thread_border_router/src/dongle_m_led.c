@@ -35,10 +35,10 @@ static rgb_t base_colour(void)
 
 static void set_rgb(rgb_t colour)
 {
-    /* Dongle-M's RGB LED is common-anode, so zero turns a channel on. */
-    gpio_set_level(CONFIG_ESP_BR_BOARD_LED_RED_GPIO, !colour.red);
-    gpio_set_level(CONFIG_ESP_BR_BOARD_LED_GREEN_GPIO, !colour.green);
-    gpio_set_level(CONFIG_ESP_BR_BOARD_LED_BLUE_GPIO, !colour.blue);
+    /* Dongle-M's RGB LED is active-high (common-cathode). */
+    gpio_set_level(CONFIG_ESP_BR_BOARD_LED_RED_GPIO, colour.red);
+    gpio_set_level(CONFIG_ESP_BR_BOARD_LED_GREEN_GPIO, colour.green);
+    gpio_set_level(CONFIG_ESP_BR_BOARD_LED_BLUE_GPIO, colour.blue);
 }
 
 static bool attached(void)

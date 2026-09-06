@@ -27,7 +27,7 @@ The profile selects a classic ESP32 host and records:
 - stock MG24 Spinel UART on UART1, host RX GPIO13, host TX GPIO17, 115200 8N1 without flow control;
 - MG24 reset GPIO12 and control/mute GPIO15, defined but not manipulated;
 - IP101GA on the ESP32's fixed RMII pins, external clock GPIO0, MDC GPIO23, MDIO GPIO18, reset GPIO5, PHY address 1;
-- RGB red GPIO4, green GPIO14, blue GPIO2, defined without implementing the status policy.
+- RGB red GPIO4, green GPIO14, blue GPIO2, with active-high output handled by the separate status-policy component.
 
 The donor describes Ethernet as using the default classic-ESP32 RMII wiring. ESP-IDF v5.5.4 fixes the RMII data signals to TX_EN GPIO21, TXD0 GPIO19, TXD1 GPIO22, RXD0 GPIO25, RXD1 GPIO26, and CRS_DV GPIO27. The donor's remaining Ethernet settings came from ESP-IDF defaults and are now explicit in the profile.
 
@@ -112,6 +112,24 @@ pulses green when Thread is attached or red when detached. The detached pulse is
 suppressed for 15 seconds after OpenThread becomes ready. GPIO definitions remain
 in the board profile and the policy timing is Kconfig-configurable.
 
+## OpenThread startup lifecycle correction
+
+Hardware testing of the Wi-Fi path exposed a reproducible assertion after
+`esp_openthread_border_router_init()`. The Dongle-M path released the OpenThread
+lock immediately after border-router initialization and then released it again
+after `esp_openthread_auto_start()`. The second release occurred in the
+`ot_br_init` task without owning the task-switching lock, matching the IDF
+assertion. The corrected path keeps one `esp_openthread_lock_acquire()` scope
+through border-router initialization, dataset access, and `auto_start()`, then
+performs one matching release.
+
+ESP-IDF v5.5.4 also documents that `esp_openthread_set_backbone_netif()` must
+run before `esp_openthread_init()`. Since Dongle-M network selection may wait for
+Ethernet, Wi-Fi, or provisioning, the corrected launch path selects the one
+authoritative backbone before `esp_openthread_start()`, registers it, and then
+starts OpenThread. No runtime failover, provisioning-policy, or RCP change was
+made.
+
 ## Hardware status and next gate
 
 **STAGE 1 HARDWARE VALIDATION: PASSED**
@@ -126,9 +144,9 @@ was observed.
 
 The rebased build at source HEAD `ddc0ccef3f5dbf7b794bd5000d4a9d335cab845` was subsequently validated on real Sonoff Dongle-M hardware. The validation confirmed classic ESP32 boot, 16 MB DIO/40 MHz flash, the Dongle-M board profile, stock MG24 Spinel/OpenThread operation over UART1 GPIO13/GPIO17 at 115200 8N1 without flow control, supported `RX_ON_WHEN_IDLE` compatibility, Ethernet/DHCP/IPv6/mDNS, current upstream Web UI, NAT64, and restoration of saved Thread state. No panic, reboot loop, or RCP framing errors were observed.
 
-The network/LED milestone build is **PENDING HARDWARE VALIDATION**. The user must
+The corrected network/LED build is **PENDING HARDWARE VALIDATION**. The user must
 verify the Ethernet-first selection, Wi-Fi fallback, SoftAP recovery threshold,
-backbone lock, RGB indications, and Thread pulse timing on a real Dongle-M.
+backbone lock, active-high RGB indications, and Thread pulse timing on a real Dongle-M.
 
 The stock-RCP baseline is now the known-good starting point for replacement MG24 RCP investigation. Hardware tests for replacement firmware remain **PENDING HARDWARE VALIDATION**.
 

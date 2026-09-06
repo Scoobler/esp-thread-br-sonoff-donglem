@@ -98,18 +98,19 @@ static bool wifi_config_save_and_connect(const char *ssid, const char *password)
 #endif
 
 #if CONFIG_OPENTHREAD_BR_AUTO_START
+#if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
+static esp_netif_t *s_dongle_m_backbone;
+#endif
+
 static void ot_br_init(void *ctx)
 {
 #if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
-    esp_netif_t *selected_backbone = NULL;
-    ESP_ERROR_CHECK(dongle_m_network_select_backbone(&selected_backbone));
     esp_openthread_lock_acquire(portMAX_DELAY);
-    esp_openthread_set_backbone_netif(selected_backbone);
     ESP_ERROR_CHECK(esp_openthread_border_router_init());
 #if CONFIG_OPENTHREAD_CLI_WIFI
     esp_ot_wifi_border_router_init_flag_set(true);
 #endif
-    esp_openthread_lock_release();
+    /* Keep the lock through dataset access and auto-start. */
 #else
 #if CONFIG_EXAMPLE_CONNECT_WIFI
     // Wi-Fi connection mode - two ways to get Wi-Fi parameters:
@@ -213,10 +214,18 @@ void launch_openthread_border_router(const esp_openthread_config_t *config,
     OT_UNUSED_VARIABLE(update_config);
 #endif
 
-    ESP_ERROR_CHECK(esp_openthread_start(config));
 #if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
+    /* Network selection may block, so register the selected backbone before
+     * esp_openthread_start() calls esp_openthread_init(). */
     dongle_m_led_init();
+#if CONFIG_OPENTHREAD_CLI_WIFI
+    ESP_ERROR_CHECK(esp_ot_wifi_config_init());
 #endif
+    ESP_ERROR_CHECK(dongle_m_network_select_backbone(&s_dongle_m_backbone));
+    esp_openthread_set_backbone_netif(s_dongle_m_backbone);
+#endif
+
+    ESP_ERROR_CHECK(esp_openthread_start(config));
 #if CONFIG_AUTO_UPDATE_RCP
     esp_ot_update_rcp_if_different();
 #endif

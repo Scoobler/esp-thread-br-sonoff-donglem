@@ -60,7 +60,7 @@ void esp_br_board_log_profile(void)
              CONFIG_ESP_BR_BOARD_ETH_PHY_ADDR, CONFIG_ESP_BR_BOARD_ETH_MDC_GPIO,
              CONFIG_ESP_BR_BOARD_ETH_MDIO_GPIO, CONFIG_ESP_BR_BOARD_ETH_RESET_GPIO,
              CONFIG_ESP_BR_BOARD_ETH_RMII_CLK_GPIO);
-    ESP_LOGI(TAG, "RGB hardware: red GPIO%d, green GPIO%d, blue GPIO%d (status policy not enabled)",
+    ESP_LOGI(TAG, "RGB hardware: red GPIO%d, green GPIO%d, blue GPIO%d (status policy starts after OpenThread initialization)",
              CONFIG_ESP_BR_BOARD_LED_RED_GPIO, CONFIG_ESP_BR_BOARD_LED_GREEN_GPIO,
              CONFIG_ESP_BR_BOARD_LED_BLUE_GPIO);
     ESP_LOGW(TAG, "Stock MG24 compatibility: RX_ON_WHEN_IDLE is not required or advertised by the host");
