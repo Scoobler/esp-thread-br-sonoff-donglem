@@ -8,7 +8,7 @@
 
 #include <stdint.h>
 
-#include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "esp_log.h"
 #include "esp_openthread.h"
 #include "esp_openthread_lock.h"
@@ -20,25 +20,36 @@
 #define TAG "dongle_m_led"
 typedef struct { uint8_t red, green, blue; } rgb_t;
 
+/* The Dongle-M RGB LED is active-high (common-cathode). */
+#define LEDC_MODE       LEDC_LOW_SPEED_MODE
+#define LEDC_TIMER      LEDC_TIMER_0
+#define LEDC_TIMER_BITS LEDC_TIMER_8_BIT
+#define LEDC_FREQ_HZ    5000
+#define LEDC_CH_RED     LEDC_CHANNEL_0
+#define LEDC_CH_GREEN   LEDC_CHANNEL_1
+#define LEDC_CH_BLUE    LEDC_CHANNEL_2
+
 static volatile dongle_m_led_interface_t s_interface = DONGLE_M_LED_INTERFACE_ETHERNET;
 static volatile bool s_thread_ready;
 
 static rgb_t base_colour(void)
 {
     switch (s_interface) {
-    case DONGLE_M_LED_INTERFACE_ETHERNET: return (rgb_t){0, 0, 1};
-    case DONGLE_M_LED_INTERFACE_WIFI: return (rgb_t){1, 1, 0};
-    case DONGLE_M_LED_INTERFACE_SOFTAP: return (rgb_t){1, 0, 1};
+    case DONGLE_M_LED_INTERFACE_ETHERNET: return (rgb_t){0, 0, 255};
+    case DONGLE_M_LED_INTERFACE_WIFI: return (rgb_t){255, 40, 0};
+    case DONGLE_M_LED_INTERFACE_SOFTAP: return (rgb_t){128, 0, 128};
     default: return (rgb_t){0, 0, 0};
     }
 }
 
 static void set_rgb(rgb_t colour)
 {
-    /* Dongle-M's RGB LED is active-high (common-cathode). */
-    gpio_set_level(CONFIG_ESP_BR_BOARD_LED_RED_GPIO, colour.red);
-    gpio_set_level(CONFIG_ESP_BR_BOARD_LED_GREEN_GPIO, colour.green);
-    gpio_set_level(CONFIG_ESP_BR_BOARD_LED_BLUE_GPIO, colour.blue);
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CH_RED, colour.red));
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CH_GREEN, colour.green));
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CH_BLUE, colour.blue));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CH_RED));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CH_GREEN));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CH_BLUE));
 }
 
 static bool attached(void)
@@ -77,7 +88,7 @@ static void led_task(void *arg)
         }
 
         if (pulse && s_thread_ready && (!in_suppression || is_attached)) {
-            set_rgb(is_attached ? (rgb_t){0, 1, 0} : (rgb_t){1, 0, 0});
+            set_rgb(is_attached ? (rgb_t){0, 255, 0} : (rgb_t){255, 0, 0});
         } else {
             set_rgb(base_colour());
         }
@@ -87,19 +98,34 @@ static void led_task(void *arg)
 
 void dongle_m_led_init(void)
 {
-    gpio_config_t config = {
-        .pin_bit_mask = (1ULL << CONFIG_ESP_BR_BOARD_LED_RED_GPIO) |
-                        (1ULL << CONFIG_ESP_BR_BOARD_LED_GREEN_GPIO) |
-                        (1ULL << CONFIG_ESP_BR_BOARD_LED_BLUE_GPIO),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
+    ledc_timer_config_t timer = {
+        .speed_mode = LEDC_MODE,
+        .duty_resolution = LEDC_TIMER_BITS,
+        .timer_num = LEDC_TIMER,
+        .freq_hz = LEDC_FREQ_HZ,
+        .clk_cfg = LEDC_AUTO_CLK,
     };
-    ESP_ERROR_CHECK(gpio_config(&config));
-    set_rgb((rgb_t){1, 0, 0}); vTaskDelay(pdMS_TO_TICKS(250));
-    set_rgb((rgb_t){0, 1, 0}); vTaskDelay(pdMS_TO_TICKS(250));
-    set_rgb((rgb_t){0, 0, 1}); vTaskDelay(pdMS_TO_TICKS(250));
+    ESP_ERROR_CHECK(ledc_timer_config(&timer));
+
+    ledc_channel_config_t channel = {
+        .gpio_num = CONFIG_ESP_BR_BOARD_LED_RED_GPIO,
+        .speed_mode = LEDC_MODE,
+        .channel = LEDC_CH_RED,
+        .intr_type = LEDC_INTR_DISABLE,
+        .timer_sel = LEDC_TIMER,
+        .duty = 0,
+        .hpoint = 0,
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&channel));
+    channel.gpio_num = CONFIG_ESP_BR_BOARD_LED_GREEN_GPIO;
+    channel.channel = LEDC_CH_GREEN;
+    ESP_ERROR_CHECK(ledc_channel_config(&channel));
+    channel.gpio_num = CONFIG_ESP_BR_BOARD_LED_BLUE_GPIO;
+    channel.channel = LEDC_CH_BLUE;
+    ESP_ERROR_CHECK(ledc_channel_config(&channel));
+    set_rgb((rgb_t){255, 0, 0}); vTaskDelay(pdMS_TO_TICKS(250));
+    set_rgb((rgb_t){0, 255, 0}); vTaskDelay(pdMS_TO_TICKS(250));
+    set_rgb((rgb_t){0, 0, 255}); vTaskDelay(pdMS_TO_TICKS(250));
     set_rgb((rgb_t){0, 0, 0});
     ESP_ERROR_CHECK(xTaskCreate(led_task, "dongle_led", 3072, NULL, 3, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_LOGI(TAG, "Dongle-M RGB status policy started");
