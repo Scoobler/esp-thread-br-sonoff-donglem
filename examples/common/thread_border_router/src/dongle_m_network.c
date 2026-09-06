@@ -131,7 +131,7 @@ static bool wifi_start_nonblocking(const char *ssid, const char *password)
     return example_wifi_sta_do_connect(config, false) == ESP_OK;
 }
 
-static bool provision_wifi(char *ssid, char *password)
+static bool provision_wifi(char *ssid, char *password, uint32_t timeout_ms)
 {
     dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_SOFTAP);
     if (esp_br_wifi_config_start() != ESP_OK) {
@@ -139,9 +139,21 @@ static bool provision_wifi(char *ssid, char *password)
         return false;
     }
     esp_err_t err = esp_br_wifi_config_get_configured_wifi(ssid, SSID_MAX_LEN, password, PASSWORD_MAX_LEN,
-                                                            CONFIG_ESP_BR_DONGLE_M_SOFTAP_WINDOW_MS);
+                                                            timeout_ms);
     esp_br_wifi_config_stop();
     return err == ESP_OK && ssid[0] != '\0';
+}
+
+static bool provision_first_time_wifi(char *ssid, char *password)
+{
+    /* First-time provisioning remains active until the user supplies Wi-Fi. */
+    return provision_wifi(ssid, password, 0);
+}
+
+static bool provision_recovery_wifi(char *ssid, char *password)
+{
+    /* Recovery provisioning is deliberately bounded so normal boot retries resume. */
+    return provision_wifi(ssid, password, CONFIG_ESP_BR_DONGLE_M_SOFTAP_WINDOW_MS);
 }
 
 static bool wait_for(EventBits_t bit, uint32_t timeout_ms)
@@ -173,15 +185,14 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
     if (wait_for(ETH_READY, CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS)) {
         *backbone = netif_for_ifkey("ETH_DEF");
         dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_ETHERNET);
-        fail_count_reset();
         ESP_LOGI(TAG, "Selected Ethernet backbone");
         return *backbone ? ESP_OK : ESP_FAIL;
     }
 
     if (!stored_wifi_credentials(ssid, password)) {
         ESP_LOGI(TAG, "No saved Wi-Fi credentials; opening provisioning SoftAP");
-        if (!provision_wifi(ssid, password)) {
-            ESP_LOGW(TAG, "Provisioning window expired; rebooting");
+        if (!provision_first_time_wifi(ssid, password)) {
+            ESP_LOGW(TAG, "Unable to start first-time provisioning; rebooting");
             vTaskDelay(pdMS_TO_TICKS(1000));
             esp_restart();
         }
@@ -209,9 +220,11 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
     if (failures >= CONFIG_ESP_BR_DONGLE_M_WIFI_FAIL_THRESHOLD) {
         memset(ssid, 0, sizeof(ssid));
         memset(password, 0, sizeof(password));
-        if (provision_wifi(ssid, password)) {
+        if (provision_recovery_wifi(ssid, password)) {
             esp_ot_wifi_config_set_ssid(ssid);
             esp_ot_wifi_config_set_password(password);
+            remember_ssid(ssid);
+            fail_count_reset();
         }
     }
 
