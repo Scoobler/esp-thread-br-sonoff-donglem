@@ -12,6 +12,7 @@
 
 #include "esp_br_wifi_config.h"
 #include "esp_check.h"
+#include "esp_eth.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_ot_wifi_cmd.h"
@@ -34,6 +35,62 @@
 
 static EventGroupHandle_t s_events;
 static TaskHandle_t s_eth_task;
+static TaskHandle_t s_runtime_task;
+
+typedef enum {
+    DONGLE_M_INFRA_NONE,
+    DONGLE_M_INFRA_ETHERNET,
+    DONGLE_M_INFRA_WIFI,
+    DONGLE_M_INFRA_PROVISIONING,
+} dongle_m_infra_t;
+
+typedef struct {
+    dongle_m_infra_t selected;
+    bool eth_link;
+    bool eth_ip;
+    bool failure_confirming;
+    bool failure_action_handled;
+    bool recovery_confirming;
+    bool reboot_pending;
+    TickType_t failure_started;
+    TickType_t recovery_started;
+} dongle_m_network_state_t;
+
+static portMUX_TYPE s_state_lock = portMUX_INITIALIZER_UNLOCKED;
+static dongle_m_network_state_t s_state;
+
+static dongle_m_network_state_t state_snapshot(void)
+{
+    dongle_m_network_state_t state;
+    portENTER_CRITICAL(&s_state_lock);
+    state = s_state;
+    portEXIT_CRITICAL(&s_state_lock);
+    return state;
+}
+
+static void state_set_selected(dongle_m_infra_t selected)
+{
+    portENTER_CRITICAL(&s_state_lock);
+    s_state.selected = selected;
+    portEXIT_CRITICAL(&s_state_lock);
+}
+
+static void state_set_ethernet(bool link, bool ip, bool set_link, bool set_ip)
+{
+    TaskHandle_t runtime_task;
+    portENTER_CRITICAL(&s_state_lock);
+    if (set_link) {
+        s_state.eth_link = link;
+    }
+    if (set_ip) {
+        s_state.eth_ip = ip;
+    }
+    runtime_task = s_runtime_task;
+    portEXIT_CRITICAL(&s_state_lock);
+    if (runtime_task) {
+        xTaskNotifyGive(runtime_task);
+    }
+}
 
 static esp_netif_t *netif_for_ifkey(const char *ifkey)
 {
@@ -43,15 +100,34 @@ static esp_netif_t *netif_for_ifkey(const char *ifkey)
 static void ip_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg;
-    if (base != IP_EVENT || data == NULL) {
+    if (base != IP_EVENT) {
         return;
     }
-    ip_event_got_ip_t *event = data;
-    const char *ifkey = esp_netif_get_ifkey(event->esp_netif);
-    if (id == IP_EVENT_ETH_GOT_IP && ifkey && strcmp(ifkey, "ETH_DEF") == 0) {
-        xEventGroupSetBits(s_events, ETH_READY);
-    } else if (id == IP_EVENT_STA_GOT_IP && ifkey && strcmp(ifkey, "WIFI_STA_DEF") == 0) {
-        xEventGroupSetBits(s_events, WIFI_READY);
+    if (id == IP_EVENT_ETH_LOST_IP) {
+        state_set_ethernet(false, false, false, true);
+    } else if (data != NULL && (id == IP_EVENT_ETH_GOT_IP || id == IP_EVENT_STA_GOT_IP)) {
+        ip_event_got_ip_t *event = data;
+        const char *ifkey = esp_netif_get_ifkey(event->esp_netif);
+        if (id == IP_EVENT_ETH_GOT_IP && ifkey && strcmp(ifkey, "ETH_DEF") == 0) {
+            state_set_ethernet(true, true, true, true);
+            xEventGroupSetBits(s_events, ETH_READY);
+        } else if (id == IP_EVENT_STA_GOT_IP && ifkey && strcmp(ifkey, "WIFI_STA_DEF") == 0) {
+            xEventGroupSetBits(s_events, WIFI_READY);
+        }
+    }
+}
+
+static void ethernet_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    (void)arg;
+    (void)data;
+    if (base != ETH_EVENT) {
+        return;
+    }
+    if (id == ETHERNET_EVENT_CONNECTED) {
+        state_set_ethernet(true, false, true, false);
+    } else if (id == ETHERNET_EVENT_DISCONNECTED) {
+        state_set_ethernet(false, false, true, true);
     }
 }
 
@@ -161,6 +237,81 @@ static bool wait_for(EventBits_t bit, uint32_t timeout_ms)
     return (xEventGroupWaitBits(s_events, bit, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms)) & bit) != 0;
 }
 
+static void request_reboot(const char *message)
+{
+    portENTER_CRITICAL(&s_state_lock);
+    s_state.reboot_pending = true;
+    portEXIT_CRITICAL(&s_state_lock);
+    ESP_LOGW(TAG, "%s", message);
+    vTaskDelay(pdMS_TO_TICKS(250));
+    esp_restart();
+    for (;;) {
+        vTaskDelay(portMAX_DELAY);
+    }
+}
+
+static void runtime_monitor_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        dongle_m_network_state_t state = state_snapshot();
+        TickType_t now = xTaskGetTickCount();
+        bool ethernet_usable = state.eth_link && state.eth_ip;
+
+        if (!state.reboot_pending && state.selected == DONGLE_M_INFRA_ETHERNET) {
+            if (ethernet_usable) {
+                if (state.failure_confirming || state.failure_action_handled) {
+                    ESP_LOGI(TAG, "Ethernet recovered; failover cancelled");
+                }
+                portENTER_CRITICAL(&s_state_lock);
+                s_state.failure_confirming = false;
+                s_state.failure_action_handled = false;
+                portEXIT_CRITICAL(&s_state_lock);
+            } else if (!state.failure_confirming) {
+                ESP_LOGW(TAG, "Ethernet lost; starting %u second recovery confirmation",
+                         (unsigned)(CONFIG_ESP_BR_DONGLE_M_ETHERNET_FAILURE_CONFIRM_MS / 1000));
+                portENTER_CRITICAL(&s_state_lock);
+                s_state.failure_confirming = true;
+                s_state.failure_action_handled = false;
+                s_state.failure_started = now;
+                portEXIT_CRITICAL(&s_state_lock);
+            } else if (!state.failure_action_handled &&
+                       now - state.failure_started >=
+                           pdMS_TO_TICKS(CONFIG_ESP_BR_DONGLE_M_ETHERNET_FAILURE_CONFIRM_MS)) {
+                char ssid[SSID_MAX_LEN] = {0};
+                char password[PASSWORD_MAX_LEN] = {0};
+                if (stored_wifi_credentials(ssid, password)) {
+                    request_reboot("Ethernet unavailable; saved Wi-Fi available, rebooting for Wi-Fi recovery");
+                }
+                ESP_LOGW(TAG, "Ethernet unavailable; no Wi-Fi credentials configured");
+                portENTER_CRITICAL(&s_state_lock);
+                s_state.failure_action_handled = true;
+                portEXIT_CRITICAL(&s_state_lock);
+            }
+        } else if (!state.reboot_pending && state.selected == DONGLE_M_INFRA_WIFI) {
+            if (ethernet_usable && !state.recovery_confirming) {
+                ESP_LOGI(TAG, "Ethernet available while Wi-Fi active; starting %u second stability timer",
+                         (unsigned)(CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_STABLE_MS / 1000));
+                portENTER_CRITICAL(&s_state_lock);
+                s_state.recovery_confirming = true;
+                s_state.recovery_started = now;
+                portEXIT_CRITICAL(&s_state_lock);
+            } else if (!ethernet_usable && state.recovery_confirming) {
+                ESP_LOGI(TAG, "Ethernet recovery cancelled; link lost");
+                portENTER_CRITICAL(&s_state_lock);
+                s_state.recovery_confirming = false;
+                portEXIT_CRITICAL(&s_state_lock);
+            } else if (ethernet_usable && state.recovery_confirming &&
+                       now - state.recovery_started >=
+                           pdMS_TO_TICKS(CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_STABLE_MS)) {
+                request_reboot("Ethernet stable; rebooting to restore preferred Ethernet infrastructure");
+            }
+        }
+
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(250));
+    }
+}
+
 esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
 {
     char ssid[SSID_MAX_LEN] = {0};
@@ -177,6 +328,8 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
     }
     ESP_RETURN_ON_ERROR(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler, NULL), TAG,
                         "IP event registration failed");
+    ESP_RETURN_ON_ERROR(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, ethernet_event_handler, NULL), TAG,
+                        "Ethernet event registration failed");
 
     /* Dongle-M uses a single authoritative backbone for each boot. */
     if (xTaskCreate(ethernet_task, "dongle_eth", 4096, NULL, 4, &s_eth_task) != pdPASS) {
@@ -184,12 +337,14 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
     }
     if (wait_for(ETH_READY, CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS)) {
         *backbone = netif_for_ifkey("ETH_DEF");
+        state_set_selected(DONGLE_M_INFRA_ETHERNET);
         dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_ETHERNET);
         ESP_LOGI(TAG, "Selected Ethernet backbone");
         return *backbone ? ESP_OK : ESP_FAIL;
     }
 
     if (!stored_wifi_credentials(ssid, password)) {
+        state_set_selected(DONGLE_M_INFRA_PROVISIONING);
         ESP_LOGI(TAG, "No saved Wi-Fi credentials; opening provisioning SoftAP");
         if (!provision_first_time_wifi(ssid, password)) {
             ESP_LOGW(TAG, "Unable to start first-time provisioning; rebooting");
@@ -206,6 +361,7 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         remember_ssid(ssid);
         fail_count_reset();
         *backbone = netif_for_ifkey("WIFI_STA_DEF");
+        state_set_selected(DONGLE_M_INFRA_WIFI);
         dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_WIFI);
         ESP_LOGI(TAG, "Selected Wi-Fi backbone");
         return *backbone ? ESP_OK : ESP_FAIL;
@@ -218,6 +374,7 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
     fail_count_set(failures);
     ESP_LOGW(TAG, "Wi-Fi startup failed; failure count is %u", failures);
     if (failures >= CONFIG_ESP_BR_DONGLE_M_WIFI_FAIL_THRESHOLD) {
+        state_set_selected(DONGLE_M_INFRA_PROVISIONING);
         memset(ssid, 0, sizeof(ssid));
         memset(password, 0, sizeof(password));
         if (provision_recovery_wifi(ssid, password)) {
@@ -234,11 +391,30 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
     return ESP_FAIL;
 }
 
+esp_err_t dongle_m_network_start_runtime_monitor(void)
+{
+    dongle_m_network_state_t state = state_snapshot();
+    if (state.selected != DONGLE_M_INFRA_ETHERNET && state.selected != DONGLE_M_INFRA_WIFI) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_runtime_task) {
+        return ESP_OK;
+    }
+    return xTaskCreate(runtime_monitor_task, "dongle_net", 4096, NULL, 4, &s_runtime_task) == pdPASS
+               ? ESP_OK
+               : ESP_ERR_NO_MEM;
+}
+
 #else
 
 esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
 {
     (void)backbone;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+esp_err_t dongle_m_network_start_runtime_monitor(void)
+{
     return ESP_ERR_NOT_SUPPORTED;
 }
 

@@ -204,6 +204,76 @@ Later hardware tests must cover both promotion directions, standby disabled and 
 
 Conclusion: DO NOT implement runtime failover yet. Obtain or design a reviewed Espressif platform-level rebind API and test it independently from LED and provisioning policy.
 
+## Runtime infrastructure recovery implementation (2026-09-06)
+
+The follow-up implementation selected **Option C: Dongle-M-only reboot-based
+recovery**. The earlier live-switch conclusion remains valid: there is no public
+ESP-IDF API or Kconfig option that atomically changes the active infrastructure
+netif after `esp_openthread_init`. OpenThread core can reinitialize Border
+Routing for another interface index while retaining the instance, dataset,
+radio, and attachment, but the public Espressif layer cannot update its cached
+netif and all dependent UDP, NAT64/DNS64, mDNS, RA, ND, route, and service state
+as one supported operation. The missing functionality is therefore a new
+platform-level lifecycle, not a one-line enablement. No private state, internal
+pointer mutation, OpenThread patch, or generic upstream behavior was added.
+
+### Legacy behavior used as policy evidence
+
+The donor at `0a1c04447762d31abd7acd8ff28dcc810f041e19` implemented only
+deterministic boot selection. It tried Ethernet for about 10 seconds, then saved
+Wi-Fi for about 12 seconds, and locked the first successful backbone. Wi-Fi was
+not started or associated when Ethernet won; Ethernet remained running when
+Wi-Fi won. Late Ethernet/Wi-Fi events did not switch the locked backbone. The
+legacy event handler logged Wi-Fi disconnects but had no interface-health state
+machine, runtime Ethernet-loss action, delayed recovery reboot, or Ethernet
+return stability timer.
+
+Failed Wi-Fi boots incremented the NVS `br/fail_count`; successful Wi-Fi reset
+it, and changing the saved SSID reset it. At five failures the donor exposed a
+bounded three-minute recovery SoftAP, then rebooted to retry if credentials were
+not replaced. No saved credentials entered first-time provisioning. The new
+runtime policy preserves those semantics and does not treat Ethernet success as
+Wi-Fi recovery.
+
+### Implemented state machine
+
+The event callbacks only record Ethernet link and IPv4 state and wake one
+Dongle-M policy task. Monitoring starts after Border Routing and OpenThread
+auto-start complete. Ethernet is considered usable only while both link and its
+DHCP IPv4 address are present.
+
+    ETH_ACTIVE + Ethernet unusable
+      -> confirm for CONFIG_ESP_BR_DONGLE_M_ETHERNET_FAILURE_CONFIRM_MS (5000 ms)
+      -> recovered: cancel, remain ETH_ACTIVE
+      -> still down + saved Wi-Fi: mark reboot pending, controlled esp_restart()
+      -> still down + no saved Wi-Fi: log once, remain running without a reboot loop
+
+    WIFI_ACTIVE + Ethernet usable
+      -> require CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_STABLE_MS (30000 ms)
+      -> Ethernet becomes unusable: cancel, remain WIFI_ACTIVE
+      -> continuously usable: mark reboot pending, controlled esp_restart()
+
+After reboot the existing deterministic boot policy chooses Ethernet first or
+falls back to saved Wi-Fi. A single reboot-pending flag serializes each action;
+the five-second failure confirmation, 30-second Ethernet stability requirement,
+and no-alternate hold state prevent oscillation and persistent reboot loops.
+The active-interface LED remains unchanged until reboot, then normal boot
+selection sets blue for Ethernet or orange for Wi-Fi. No intermediate color was
+added.
+
+This recovery intentionally restarts the local OTBR and temporarily detaches it.
+It does not erase or replace the Thread dataset, Wi-Fi credentials, NVS failure
+history, partition layout, or MG24 firmware. Normal saved-dataset restoration
+and Thread reattachment are expected after boot.
+
+Hardware validation is **PENDING HARDWARE VALIDATION**. Validate Ethernet to
+Wi-Fi recovery after five seconds, cancellation on a sub-five-second transient,
+Wi-Fi to Ethernet recovery only after 30 stable seconds, cancellation during
+Ethernet flapping, no reboot when no saved Wi-Fi alternative exists, preserved
+LED meaning before and after reboot, restored Thread dataset/attachment, router
+device operation, and BILRESA delivery after each recovery path. Confirm there
+is no reboot loop, factory reset, RCP update, or new lock/watchdog/RCP error.
+
 ## Current migration path
 
 1. **Stage 1 — Current upstream plus Dongle-M board support:** **HARDWARE VALIDATED**.

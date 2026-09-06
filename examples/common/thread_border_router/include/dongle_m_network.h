@@ -7,3 +7,6 @@
 
 /* Selects and locks the Dongle-M infrastructure interface for this boot. */
 esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone);
+
+/* Starts runtime health monitoring after OpenThread Border Routing is ready. */
+esp_err_t dongle_m_network_start_runtime_monitor(void);

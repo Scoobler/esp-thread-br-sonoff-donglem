@@ -191,6 +191,9 @@ static void ot_br_init(void *ctx)
     dongle_m_led_set_thread_ready(true);
 #endif
     esp_openthread_lock_release();
+#if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
+    ESP_ERROR_CHECK(dongle_m_network_start_runtime_monitor());
+#endif
 
     vTaskDelete(NULL);
 }

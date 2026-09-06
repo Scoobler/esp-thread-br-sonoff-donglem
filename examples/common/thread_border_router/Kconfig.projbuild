@@ -118,6 +118,14 @@ menu "ESP Thread Border Router Example"
                 int "Dongle-M provisioning SoftAP window (ms)"
                 default 180000
                 range 10000 600000
+            config ESP_BR_DONGLE_M_ETHERNET_FAILURE_CONFIRM_MS
+                int "Dongle-M Ethernet failure confirmation (ms)"
+                default 5000
+                range 1000 60000
+            config ESP_BR_DONGLE_M_ETHERNET_RECOVERY_STABLE_MS
+                int "Dongle-M Ethernet recovery stability (ms)"
+                default 30000
+                range 1000 300000
             config ESP_BR_DONGLE_M_LED_PULSE_INTERVAL_MS
                 int "Dongle-M LED pulse interval (ms)"
                 default 2000
