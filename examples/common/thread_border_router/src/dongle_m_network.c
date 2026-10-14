@@ -33,6 +33,7 @@
 #define ETH_READY BIT0
 #define WIFI_READY BIT1
 #define ETH_LINK BIT2
+#define PROVISION_POLL_MS 1000
 
 static EventGroupHandle_t s_events;
 static TaskHandle_t s_eth_task;
@@ -44,6 +45,12 @@ typedef enum {
     DONGLE_M_INFRA_WIFI,
     DONGLE_M_INFRA_PROVISIONING,
 } dongle_m_infra_t;
+
+typedef enum {
+    PROVISION_FAILED,
+    PROVISION_WIFI,
+    PROVISION_ETHERNET,
+} provision_result_t;
 
 typedef struct {
     dongle_m_infra_t selected;
@@ -210,26 +217,47 @@ static bool wifi_start_nonblocking(const char *ssid, const char *password)
     return example_wifi_sta_do_connect(config, false) == ESP_OK;
 }
 
-static bool provision_wifi(char *ssid, char *password, uint32_t timeout_ms)
+static provision_result_t provision_wifi(char *ssid, char *password, uint32_t timeout_ms)
 {
+    provision_result_t result = PROVISION_FAILED;
+    TickType_t started = xTaskGetTickCount();
+
     dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_SOFTAP);
     if (esp_br_wifi_config_start() != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start provisioning SoftAP");
-        return false;
+        return PROVISION_FAILED;
     }
-    esp_err_t err = esp_br_wifi_config_get_configured_wifi(ssid, SSID_MAX_LEN, password, PASSWORD_MAX_LEN,
-                                                            timeout_ms);
+    /* Poll in short slices so a late Ethernet lease ends provisioning instead of being ignored. */
+    for (;;) {
+        esp_err_t err = esp_br_wifi_config_get_configured_wifi(ssid, SSID_MAX_LEN, password, PASSWORD_MAX_LEN,
+                                                                PROVISION_POLL_MS);
+        if (err == ESP_OK && ssid[0] != '\0') {
+            result = PROVISION_WIFI;
+            break;
+        }
+        if (err != ESP_ERR_TIMEOUT) {
+            break;
+        }
+        if (xEventGroupGetBits(s_events) & ETH_READY) {
+            ESP_LOGI(TAG, "Ethernet became ready during provisioning; leaving SoftAP");
+            result = PROVISION_ETHERNET;
+            break;
+        }
+        if (timeout_ms != 0 && xTaskGetTickCount() - started >= pdMS_TO_TICKS(timeout_ms)) {
+            break;
+        }
+    }
     esp_br_wifi_config_stop();
-    return err == ESP_OK && ssid[0] != '\0';
+    return result;
 }
 
-static bool provision_first_time_wifi(char *ssid, char *password)
+static provision_result_t provision_first_time_wifi(char *ssid, char *password)
 {
-    /* First-time provisioning remains active until the user supplies Wi-Fi. */
+    /* First-time provisioning remains active until the user supplies Wi-Fi or Ethernet becomes ready. */
     return provision_wifi(ssid, password, 0);
 }
 
-static bool provision_recovery_wifi(char *ssid, char *password)
+static provision_result_t provision_recovery_wifi(char *ssid, char *password)
 {
     /* Recovery provisioning is deliberately bounded so normal boot retries resume. */
     return provision_wifi(ssid, password, CONFIG_ESP_BR_DONGLE_M_SOFTAP_WINDOW_MS);
@@ -331,10 +359,31 @@ static void runtime_monitor_task(void *arg)
     }
 }
 
+static esp_err_t select_ethernet(esp_netif_t **backbone)
+{
+    *backbone = netif_for_ifkey("ETH_DEF");
+    if (*backbone) {
+        /* ESP-IDF v5.5 replaced the EMAC's pass-all-multicast default with per-group MAC filters but does not
+         * register the IPv6 all-nodes group (ff02::1), so Router Advertisements are dropped (fixed upstream in
+         * esp-idf 44c3a5f0, not yet in a tagged release). The EMAC also has only 8 filter slots, fewer than a
+         * border router may need, so receive all multicast on the Ethernet backbone as ESP-IDF <= v5.4 did. */
+        bool all_multicast = true;
+        esp_err_t err = esp_eth_ioctl(esp_netif_get_io_driver(*backbone), ETH_CMD_S_ALL_MULTICAST, &all_multicast);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to enable Ethernet all-multicast reception: %s", esp_err_to_name(err));
+        }
+    }
+    state_set_selected(DONGLE_M_INFRA_ETHERNET);
+    dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_ETHERNET);
+    ESP_LOGI(TAG, "Selected Ethernet backbone");
+    return *backbone ? ESP_OK : ESP_FAIL;
+}
+
 esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
 {
     char ssid[SSID_MAX_LEN] = {0};
     char password[PASSWORD_MAX_LEN] = {0};
+    provision_result_t provision;
     uint8_t failures;
 
     if (!backbone) {
@@ -355,28 +404,19 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         return ESP_ERR_NO_MEM;
     }
     if (wait_for_ethernet()) {
-        *backbone = netif_for_ifkey("ETH_DEF");
-        if (*backbone) {
-            /* ESP-IDF v5.5 replaced the EMAC's pass-all-multicast default with per-group MAC filters but does not
-             * register the IPv6 all-nodes group (ff02::1), so Router Advertisements are dropped (fixed upstream in
-             * esp-idf 44c3a5f0, not yet in a tagged release). The EMAC also has only 8 filter slots, fewer than a
-             * border router may need, so receive all multicast on the Ethernet backbone as ESP-IDF <= v5.4 did. */
-            bool all_multicast = true;
-            esp_err_t err = esp_eth_ioctl(esp_netif_get_io_driver(*backbone), ETH_CMD_S_ALL_MULTICAST, &all_multicast);
-            if (err != ESP_OK) {
-                ESP_LOGW(TAG, "Failed to enable Ethernet all-multicast reception: %s", esp_err_to_name(err));
-            }
-        }
-        state_set_selected(DONGLE_M_INFRA_ETHERNET);
-        dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_ETHERNET);
-        ESP_LOGI(TAG, "Selected Ethernet backbone");
-        return *backbone ? ESP_OK : ESP_FAIL;
+        return select_ethernet(backbone);
     }
 
     if (!stored_wifi_credentials(ssid, password)) {
         state_set_selected(DONGLE_M_INFRA_PROVISIONING);
         ESP_LOGI(TAG, "No saved Wi-Fi credentials; opening provisioning SoftAP");
-        if (!provision_first_time_wifi(ssid, password)) {
+        provision = provision_first_time_wifi(ssid, password);
+        if (provision == PROVISION_ETHERNET) {
+            /* Wi-Fi station was never started in this boot and the SoftAP is torn down, so Ethernet can be
+             * selected directly; OpenThread has not started yet. */
+            return select_ethernet(backbone);
+        }
+        if (provision != PROVISION_WIFI) {
             ESP_LOGW(TAG, "Unable to start first-time provisioning; rebooting");
             vTaskDelay(pdMS_TO_TICKS(1000));
             esp_restart();
@@ -407,7 +447,9 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         state_set_selected(DONGLE_M_INFRA_PROVISIONING);
         memset(ssid, 0, sizeof(ssid));
         memset(password, 0, sizeof(password));
-        if (provision_recovery_wifi(ssid, password)) {
+        /* Wi-Fi station was already started in this boot, so even if Ethernet ends provisioning, use the
+         * reboot below; the next boot selects Ethernet through the normal startup wait. */
+        if (provision_recovery_wifi(ssid, password) == PROVISION_WIFI) {
             esp_ot_wifi_config_set_ssid(ssid);
             esp_ot_wifi_config_set_password(password);
             remember_ssid(ssid);
