@@ -102,10 +102,14 @@ menu "ESP Thread Border Router Example"
             depends on OPENTHREAD_RADIO_SPINEL_UART
 
         if ESP_BR_BOARD_SONOFF_DONGLE_M
-            config ESP_BR_DONGLE_M_ETHERNET_WAIT_MS
-                int "Dongle-M Ethernet startup wait (ms)"
-                default 10000
+            config ESP_BR_DONGLE_M_ETHERNET_LINK_WAIT_MS
+                int "Dongle-M Ethernet link startup wait (ms)"
+                default 8000
                 range 1000 60000
+            config ESP_BR_DONGLE_M_ETHERNET_WAIT_MS
+                int "Dongle-M Ethernet DHCP startup wait after link up (ms)"
+                default 60000
+                range 1000 300000
             config ESP_BR_DONGLE_M_WIFI_WAIT_MS
                 int "Dongle-M Wi-Fi startup wait (ms)"
                 default 12000

@@ -32,6 +32,7 @@
 #define PASSWORD_MAX_LEN 64
 #define ETH_READY BIT0
 #define WIFI_READY BIT1
+#define ETH_LINK BIT2
 
 static EventGroupHandle_t s_events;
 static TaskHandle_t s_eth_task;
@@ -126,8 +127,10 @@ static void ethernet_event_handler(void *arg, esp_event_base_t base, int32_t id,
     }
     if (id == ETHERNET_EVENT_CONNECTED) {
         state_set_ethernet(true, false, true, false);
+        xEventGroupSetBits(s_events, ETH_LINK);
     } else if (id == ETHERNET_EVENT_DISCONNECTED) {
         state_set_ethernet(false, false, true, true);
+        xEventGroupClearBits(s_events, ETH_LINK);
     }
 }
 
@@ -237,6 +240,22 @@ static bool wait_for(EventBits_t bit, uint32_t timeout_ms)
     return (xEventGroupWaitBits(s_events, bit, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms)) & bit) != 0;
 }
 
+static bool wait_for_ethernet(void)
+{
+    /* A missing link falls back quickly; a present link gets a long DHCP grace period, because switch-side
+     * port authentication (802.1X/MAB, dynamic VLAN) or STP forwarding delay can hold back the lease. */
+    if (!wait_for(ETH_LINK, CONFIG_ESP_BR_DONGLE_M_ETHERNET_LINK_WAIT_MS)) {
+        ESP_LOGI(TAG, "No Ethernet link within %u ms", (unsigned)CONFIG_ESP_BR_DONGLE_M_ETHERNET_LINK_WAIT_MS);
+        return false;
+    }
+    ESP_LOGI(TAG, "Ethernet link up; waiting up to %u ms for IPv4", (unsigned)CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS);
+    if (!wait_for(ETH_READY, CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS)) {
+        ESP_LOGW(TAG, "Ethernet link up but no IPv4 within %u ms", (unsigned)CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS);
+        return false;
+    }
+    return true;
+}
+
 static void request_reboot(const char *message)
 {
     portENTER_CRITICAL(&s_state_lock);
@@ -335,7 +354,7 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
     if (xTaskCreate(ethernet_task, "dongle_eth", 4096, NULL, 4, &s_eth_task) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
-    if (wait_for(ETH_READY, CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS)) {
+    if (wait_for_ethernet()) {
         *backbone = netif_for_ifkey("ETH_DEF");
         if (*backbone) {
             /* ESP-IDF v5.5 replaced the EMAC's pass-all-multicast default with per-group MAC filters but does not
