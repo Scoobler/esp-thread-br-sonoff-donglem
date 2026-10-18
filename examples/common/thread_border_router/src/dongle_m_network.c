@@ -428,26 +428,6 @@ static void runtime_monitor_task(void *arg)
     }
 }
 
-static esp_err_t select_ethernet(esp_netif_t **backbone)
-{
-    *backbone = netif_for_ifkey("ETH_DEF");
-    if (*backbone) {
-        /* ESP-IDF v5.5 replaced the EMAC's pass-all-multicast default with per-group MAC filters but does not
-         * register the IPv6 all-nodes group (ff02::1), so Router Advertisements are dropped (fixed upstream in
-         * esp-idf 44c3a5f0, not yet in a tagged release). The EMAC also has only 8 filter slots, fewer than a
-         * border router may need, so receive all multicast on the Ethernet backbone as ESP-IDF <= v5.4 did. */
-        bool all_multicast = true;
-        esp_err_t err = esp_eth_ioctl(esp_netif_get_io_driver(*backbone), ETH_CMD_S_ALL_MULTICAST, &all_multicast);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to enable Ethernet all-multicast reception: %s", esp_err_to_name(err));
-        }
-    }
-    state_set_selected(DONGLE_M_INFRA_ETHERNET);
-    dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_ETHERNET);
-    ESP_LOGI(TAG, "Selected Ethernet backbone");
-    return *backbone ? ESP_OK : ESP_FAIL;
-}
-
 esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
 {
     char ssid[SSID_MAX_LEN] = {0};
@@ -473,7 +453,22 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         return ESP_ERR_NO_MEM;
     }
     if (wait_for_ethernet()) {
-        return select_ethernet(backbone);
+        *backbone = netif_for_ifkey("ETH_DEF");
+        if (*backbone) {
+            /* ESP-IDF v5.5 replaced the EMAC's pass-all-multicast default with per-group MAC filters but does not
+             * register the IPv6 all-nodes group (ff02::1), so Router Advertisements are dropped (fixed upstream in
+             * esp-idf 44c3a5f0, not yet in a tagged release). The EMAC also has only 8 filter slots, fewer than a
+             * border router may need, so receive all multicast on the Ethernet backbone as ESP-IDF <= v5.4 did. */
+            bool all_multicast = true;
+            esp_err_t err = esp_eth_ioctl(esp_netif_get_io_driver(*backbone), ETH_CMD_S_ALL_MULTICAST, &all_multicast);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to enable Ethernet all-multicast reception: %s", esp_err_to_name(err));
+            }
+        }
+        state_set_selected(DONGLE_M_INFRA_ETHERNET);
+        dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_ETHERNET);
+        ESP_LOGI(TAG, "Selected Ethernet backbone");
+        return *backbone ? ESP_OK : ESP_FAIL;
     }
 
     if (!stored_wifi_credentials(ssid, password)) {
@@ -481,10 +476,8 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         ESP_LOGI(TAG, "No saved Wi-Fi credentials; opening provisioning SoftAP");
         provision = provision_first_time_wifi(ssid, password);
         if (provision == PROVISION_ETHERNET) {
-            /* Wi-Fi station was never started in this boot and the SoftAP is torn down, so Ethernet can be
-             * selected directly; OpenThread has not started yet. */
             remember_slow_dhcp();
-            return select_ethernet(backbone);
+            request_reboot("Ethernet ready during provisioning; rebooting to select Ethernet");
         }
         if (provision != PROVISION_WIFI) {
             ESP_LOGW(TAG, "Unable to start first-time provisioning; rebooting");
@@ -517,8 +510,7 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         state_set_selected(DONGLE_M_INFRA_PROVISIONING);
         memset(ssid, 0, sizeof(ssid));
         memset(password, 0, sizeof(password));
-        /* Wi-Fi station was already started in this boot, so even if Ethernet ends provisioning, use the
-         * reboot below; the next boot selects Ethernet through the normal startup wait. */
+        /* If Ethernet ends provisioning, the reboot below lets the next boot select it. */
         provision = provision_recovery_wifi(ssid, password);
         if (provision == PROVISION_WIFI) {
             esp_ot_wifi_config_set_ssid(ssid);
