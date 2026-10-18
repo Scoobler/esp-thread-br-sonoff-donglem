@@ -108,7 +108,11 @@ menu "ESP Thread Border Router Example"
                 range 1000 60000
             config ESP_BR_DONGLE_M_ETHERNET_WAIT_MS
                 int "Dongle-M Ethernet DHCP startup wait after link up (ms)"
-                default 60000
+                default 10000
+                range 1000 300000
+            config ESP_BR_DONGLE_M_ETHERNET_SLOW_WAIT_MS
+                int "Dongle-M extended Ethernet DHCP wait on slow DHCP networks (ms)"
+                default 30000
                 range 1000 300000
             config ESP_BR_DONGLE_M_WIFI_WAIT_MS
                 int "Dongle-M Wi-Fi startup wait (ms)"

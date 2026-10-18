@@ -28,6 +28,7 @@
 #define NVS_NAMESPACE "br"
 #define NVS_FAIL_COUNT "fail_count"
 #define NVS_LAST_SSID "last_ssid"
+#define NVS_SLOW_DHCP "slow_dhcp"
 #define SSID_MAX_LEN 32
 #define PASSWORD_MAX_LEN 64
 #define ETH_READY BIT0
@@ -38,6 +39,7 @@
 static EventGroupHandle_t s_events;
 static TaskHandle_t s_eth_task;
 static TaskHandle_t s_runtime_task;
+static bool s_dhcp_timed_out;
 
 typedef enum {
     DONGLE_M_INFRA_NONE,
@@ -150,25 +152,35 @@ static void ethernet_task(void *arg)
     vTaskDelete(NULL);
 }
 
-static uint8_t fail_count_get(void)
+static uint8_t nvs_u8_get(const char *key)
 {
     nvs_handle_t handle;
     uint8_t value = 0;
     if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
-        nvs_get_u8(handle, NVS_FAIL_COUNT, &value);
+        nvs_get_u8(handle, key, &value);
         nvs_close(handle);
     }
     return value;
 }
 
-static void fail_count_set(uint8_t value)
+static void nvs_u8_set(const char *key, uint8_t value)
 {
     nvs_handle_t handle;
     if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
-        nvs_set_u8(handle, NVS_FAIL_COUNT, value);
+        nvs_set_u8(handle, key, value);
         nvs_commit(handle);
         nvs_close(handle);
     }
+}
+
+static uint8_t fail_count_get(void)
+{
+    return nvs_u8_get(NVS_FAIL_COUNT);
+}
+
+static void fail_count_set(uint8_t value)
+{
+    nvs_u8_set(NVS_FAIL_COUNT, value);
 }
 
 static void fail_count_reset(void)
@@ -270,18 +282,37 @@ static bool wait_for(EventBits_t bit, uint32_t timeout_ms)
 
 static bool wait_for_ethernet(void)
 {
-    /* A missing link falls back quickly; a present link gets a long DHCP grace period, because switch-side
-     * port authentication (802.1X/MAB, dynamic VLAN) or STP forwarding delay can hold back the lease. */
+    /* A missing link falls back quickly. A present link gets a short DHCP wait, or an extended one once this
+     * network has been seen to deliver the lease late (switch-side 802.1X/MAB, dynamic VLAN, STP delay). */
+    bool slow_network = nvs_u8_get(NVS_SLOW_DHCP) != 0;
+    uint32_t dhcp_wait_ms =
+        slow_network ? CONFIG_ESP_BR_DONGLE_M_ETHERNET_SLOW_WAIT_MS : CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS;
+
     if (!wait_for(ETH_LINK, CONFIG_ESP_BR_DONGLE_M_ETHERNET_LINK_WAIT_MS)) {
         ESP_LOGI(TAG, "No Ethernet link within %u ms", (unsigned)CONFIG_ESP_BR_DONGLE_M_ETHERNET_LINK_WAIT_MS);
         return false;
     }
-    ESP_LOGI(TAG, "Ethernet link up; waiting up to %u ms for IPv4", (unsigned)CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS);
-    if (!wait_for(ETH_READY, CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS)) {
-        ESP_LOGW(TAG, "Ethernet link up but no IPv4 within %u ms", (unsigned)CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS);
+    ESP_LOGI(TAG, "Ethernet link up; waiting up to %u ms for IPv4%s", (unsigned)dhcp_wait_ms,
+             slow_network ? " (slow DHCP network)" : "");
+    if (!wait_for(ETH_READY, dhcp_wait_ms)) {
+        ESP_LOGW(TAG, "Ethernet link up but no IPv4 within %u ms", (unsigned)dhcp_wait_ms);
+        s_dhcp_timed_out = true;
+        if (slow_network) {
+            /* Even the extended wait was not enough, so treat Ethernet as failed and use the short wait again. */
+            nvs_u8_set(NVS_SLOW_DHCP, 0);
+        }
         return false;
     }
     return true;
+}
+
+static void remember_slow_dhcp(void)
+{
+    /* Ethernet delivered a lease after the startup wait had given up with the link present. */
+    if (s_dhcp_timed_out && nvs_u8_get(NVS_SLOW_DHCP) == 0) {
+        ESP_LOGI(TAG, "Ethernet IPv4 arrived after the startup wait; using the extended DHCP wait from now on");
+        nvs_u8_set(NVS_SLOW_DHCP, 1);
+    }
 }
 
 static void request_reboot(const char *message)
@@ -351,6 +382,7 @@ static void runtime_monitor_task(void *arg)
             } else if (ethernet_usable && state.recovery_confirming &&
                        now - state.recovery_started >=
                            pdMS_TO_TICKS(CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_STABLE_MS)) {
+                remember_slow_dhcp();
                 request_reboot("Ethernet stable; rebooting to restore preferred Ethernet infrastructure");
             }
         }
@@ -414,6 +446,7 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         if (provision == PROVISION_ETHERNET) {
             /* Wi-Fi station was never started in this boot and the SoftAP is torn down, so Ethernet can be
              * selected directly; OpenThread has not started yet. */
+            remember_slow_dhcp();
             return select_ethernet(backbone);
         }
         if (provision != PROVISION_WIFI) {
@@ -449,11 +482,14 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         memset(password, 0, sizeof(password));
         /* Wi-Fi station was already started in this boot, so even if Ethernet ends provisioning, use the
          * reboot below; the next boot selects Ethernet through the normal startup wait. */
-        if (provision_recovery_wifi(ssid, password) == PROVISION_WIFI) {
+        provision = provision_recovery_wifi(ssid, password);
+        if (provision == PROVISION_WIFI) {
             esp_ot_wifi_config_set_ssid(ssid);
             esp_ot_wifi_config_set_password(password);
             remember_ssid(ssid);
             fail_count_reset();
+        } else if (provision == PROVISION_ETHERNET) {
+            remember_slow_dhcp();
         }
     }
 
