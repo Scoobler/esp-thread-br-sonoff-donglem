@@ -134,6 +134,10 @@ menu "ESP Thread Border Router Example"
                 int "Dongle-M Ethernet recovery stability (ms)"
                 default 30000
                 range 1000 300000
+            config ESP_BR_DONGLE_M_ETHERNET_RECOVERY_MAX
+                int "Dongle-M Ethernet recovery reboots before a 30 min backoff"
+                default 3
+                range 1 20
             config ESP_BR_DONGLE_M_LED_PULSE_INTERVAL_MS
                 int "Dongle-M LED pulse interval (ms)"
                 default 2000

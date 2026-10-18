@@ -29,12 +29,15 @@
 #define NVS_FAIL_COUNT "fail_count"
 #define NVS_LAST_SSID "last_ssid"
 #define NVS_SLOW_DHCP "slow_dhcp"
+#define NVS_ETH_RECOVERIES "eth_recover"
 #define SSID_MAX_LEN 32
 #define PASSWORD_MAX_LEN 64
 #define ETH_READY BIT0
 #define WIFI_READY BIT1
 #define ETH_LINK BIT2
 #define PROVISION_POLL_MS 1000
+#define ETH_RECOVERY_COOLDOWN_MS (30 * 60 * 1000)
+#define ETH_RECOVERY_RESET_MS (10 * 60 * 1000)
 
 static EventGroupHandle_t s_events;
 static TaskHandle_t s_eth_task;
@@ -331,6 +334,12 @@ static void request_reboot(const char *message)
 static void runtime_monitor_task(void *arg)
 {
     (void)arg;
+    bool usable_tracking = false;
+    bool recoveries_reset = false;
+    bool cooldown = false;
+    TickType_t usable_since = 0;
+    TickType_t cooldown_started = 0;
+
     for (;;) {
         dongle_m_network_state_t state = state_snapshot();
         TickType_t now = xTaskGetTickCount();
@@ -345,7 +354,19 @@ static void runtime_monitor_task(void *arg)
                 s_state.failure_confirming = false;
                 s_state.failure_action_handled = false;
                 portEXIT_CRITICAL(&s_state_lock);
+                /* Only Ethernet that stays up for a while clears the recovery backoff. */
+                if (!usable_tracking) {
+                    usable_tracking = true;
+                    usable_since = now;
+                } else if (!recoveries_reset && now - usable_since >= pdMS_TO_TICKS(ETH_RECOVERY_RESET_MS)) {
+                    if (nvs_u8_get(NVS_ETH_RECOVERIES) != 0) {
+                        ESP_LOGI(TAG, "Ethernet stable; reset recovery backoff");
+                        nvs_u8_set(NVS_ETH_RECOVERIES, 0);
+                    }
+                    recoveries_reset = true;
+                }
             } else if (!state.failure_confirming) {
+                usable_tracking = false;
                 ESP_LOGW(TAG, "Ethernet lost; starting %u second recovery confirmation",
                          (unsigned)(CONFIG_ESP_BR_DONGLE_M_ETHERNET_FAILURE_CONFIRM_MS / 1000));
                 portENTER_CRITICAL(&s_state_lock);
@@ -382,8 +403,24 @@ static void runtime_monitor_task(void *arg)
             } else if (ethernet_usable && state.recovery_confirming &&
                        now - state.recovery_started >=
                            pdMS_TO_TICKS(CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_STABLE_MS)) {
-                remember_slow_dhcp();
-                request_reboot("Ethernet stable; rebooting to restore preferred Ethernet infrastructure");
+                if (cooldown) {
+                    if (now - cooldown_started >= pdMS_TO_TICKS(ETH_RECOVERY_COOLDOWN_MS)) {
+                        ESP_LOGI(TAG, "Ethernet recovery cooldown expired; allowing one more attempt");
+                        nvs_u8_set(NVS_ETH_RECOVERIES, CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_MAX - 1);
+                        cooldown = false;
+                    }
+                } else if (nvs_u8_get(NVS_ETH_RECOVERIES) >= CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_MAX) {
+                    /* Ethernet keeps coming back but does not stay up; keep Thread running over Wi-Fi. */
+                    ESP_LOGW(TAG, "Ethernet recovered %u times without staying up; staying on Wi-Fi for %u min",
+                             (unsigned)CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_MAX,
+                             (unsigned)(ETH_RECOVERY_COOLDOWN_MS / 60000));
+                    cooldown = true;
+                    cooldown_started = now;
+                } else {
+                    nvs_u8_set(NVS_ETH_RECOVERIES, nvs_u8_get(NVS_ETH_RECOVERIES) + 1);
+                    remember_slow_dhcp();
+                    request_reboot("Ethernet stable; rebooting to restore preferred Ethernet infrastructure");
+                }
             }
         }
 
