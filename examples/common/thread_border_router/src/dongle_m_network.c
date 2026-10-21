@@ -337,6 +337,17 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
     }
     if (wait_for(ETH_READY, CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS)) {
         *backbone = netif_for_ifkey("ETH_DEF");
+        if (*backbone) {
+            /* ESP-IDF v5.5 replaced the EMAC's pass-all-multicast default with per-group MAC filters but does not
+             * register the IPv6 all-nodes group (ff02::1), so Router Advertisements are dropped (fixed upstream in
+             * esp-idf 44c3a5f0, not yet in a tagged release). The EMAC also has only 8 filter slots, fewer than a
+             * border router may need, so receive all multicast on the Ethernet backbone as ESP-IDF <= v5.4 did. */
+            bool all_multicast = true;
+            esp_err_t err = esp_eth_ioctl(esp_netif_get_io_driver(*backbone), ETH_CMD_S_ALL_MULTICAST, &all_multicast);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to enable Ethernet all-multicast reception: %s", esp_err_to_name(err));
+            }
+        }
         state_set_selected(DONGLE_M_INFRA_ETHERNET);
         dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_ETHERNET);
         ESP_LOGI(TAG, "Selected Ethernet backbone");
