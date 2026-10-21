@@ -18,7 +18,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 - Prepared an Espressif upstream refresh from `0bad9f1` through `29a2345`. The candidate updates Wi-Fi MAC handling, RCP-update configuration/component metadata, upstream documentation, and CI; physical hardware validation remains pending.
 - The candidate uses the supported ESP-IDF v5.5.4 build environment. Espressif upstream uses an internal v6.2 image for some CI jobs, but v6.2 is not a project requirement.
-- Candidate source commit: `fa969a029d45228691d09086a9c1b2adcf5b5626`; merged ESP32 image SHA-256: `81ee50afac3be3b223bc7e454e046c6ea163119a92b6b3473681537320d3a5ef`. The v5.5.4 candidate build is the supported build for this candidate and requires no v6.2 toolchain.
+- Candidate source commit: `6b103b6e61ced92d0bb8a4bc77512b94a6dfdd15`; merged ESP32 image SHA-256: `b6e9bc83e6ae6dfcfec31d28f617ae1360f98be38a6f5653d0389cadef59783f`. The v5.5.4 candidate build completed successfully and requires no v6.2 toolchain.
 
 ### Fixed
 
