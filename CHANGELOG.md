@@ -14,6 +14,12 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - Pull-request firmware builds targeting `main`, including builds for Draft
   PRs, with read-only repository permissions.
 
+### Changed
+
+- Prepared an Espressif upstream refresh from `0bad9f1` through `29a2345`. The candidate updates Wi-Fi MAC handling, RCP-update configuration/component metadata, upstream documentation, and CI; physical hardware validation remains pending.
+- The candidate build uses ESP-IDF v6.2 as required by the incorporated upstream CI update; the last hardware-validated toolchain remains ESP-IDF v5.5.4.
+- Candidate source commit: `fa969a029d45228691d09086a9c1b2adcf5b5626`; merged ESP32 image SHA-256: `81ee50afac3be3b223bc7e454e046c6ea163119a92b6b3473681537320d3a5ef`. The v5.5.4 diagnostic build succeeded; the required v6.2 build remains pending because v6.2 is unavailable in this environment.
+
 ### Fixed
 
 - **Dongle-M Ethernet:** receive all multicast traffic on the Ethernet

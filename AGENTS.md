@@ -66,13 +66,13 @@ that requires a major redesign rather than a reasonable incremental merge.
 The v2 codebase currently contains Espressif upstream through:
 
 ```text
-0bad9f1f69cebe2e2ab768bbc6f71769a3661e33
+29a2345e3f0c61bba9307f3daea5ed0c94388ed3
 ```
 
 At the time this baseline was recorded:
 
 ```text
-upstream/main = 0bad9f1f69cebe2e2ab768bbc6f71769a3661e33
+upstream/main = 29a2345e3f0c61bba9307f3daea5ed0c94388ed3
 ```
 
 This value is a maintenance reference, not a permanent pin.
@@ -371,13 +371,13 @@ Example:
 
 ```text
 Previous upstream baseline:
-0bad9f1f69cebe2e2ab768bbc6f71769a3661e33
+<previous baseline>
 
 New upstream baseline:
 <new commit>
 
 Upstream comparison:
-0bad9f1f69cebe2e2ab768bbc6f71769a3661e33..<new commit>
+<previous baseline>..<new commit>
 ```
 
 ## Upstream changes incorporated
