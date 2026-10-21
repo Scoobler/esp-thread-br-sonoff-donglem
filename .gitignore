@@ -72,5 +72,4 @@ docs/_build
 /artifacts/
 
 # Local maintenance prompt
-LOCAL_UPSTREAM_SYNC_PROMPT.md
-LOCAL_RELEASE_PROMPT.md
+/LOCAL_*.md
