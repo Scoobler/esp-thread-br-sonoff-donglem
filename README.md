@@ -27,11 +27,11 @@ This project provides a practical, self-contained OTBR solution with:
 
 ## Download
 
-### Latest release — v2.0.0
+### Latest release — v2.0.1
 
-**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.0/sonoff-dongle-m-otbr-v2.0.0.bin)**
+**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin)**
 
-**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.0/sonoff-dongle-m-otbr-v2.0.0.bin.sha256)**
+**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin.sha256)**
 
 The `.bin` above is the **merged ESP32 firmware image** intended for flashing directly onto a Sonoff Dongle-M.
 
@@ -93,6 +93,70 @@ This configures the onboard EFR32MG24 with the Thread RCP firmware expected by t
 >
 > It does not automatically flash or replace the MG24 firmware.
 
+> [!WARNING]
+> If you are upgrading an existing Dongle-M installation, [back up your Active Operational Dataset first](#dataset-backup--upgrade-notes). This applies to every firmware update, including v1 to v2 and later v2 releases. First-time installations do not have an existing dataset to back up.
+
+## Dataset Backup & Upgrade Notes
+
+If the Dongle-M already belongs to a Thread network, keep a secure copy of its Active Operational Dataset before flashing or upgrading. The manual backup remains useful even if a future firmware version preserves credentials automatically.
+
+<details>
+<summary><strong>How to back up and restore your Thread network</strong></summary>
+
+### Step 1 — Connect to the existing console
+
+Connect the Sonoff Dongle-M to a computer using USB-C. Open a serial terminal such as PuTTY at 115200 baud, 8N1, with no flow control.
+
+The console may continuously display ESP32 diagnostic messages. Press Enter to obtain the `esp32>` prompt.
+
+### Step 2 — Back up the Thread dataset
+
+Run:
+
+```text
+ot dataset active -x
+```
+
+Copy and securely save the complete hexadecimal Active Operational Dataset. It contains sensitive network credentials, including the Thread network key, so do not post it publicly.
+
+### Step 3 — Flash the new firmware
+
+Close the serial terminal to release the USB port, then follow the existing [Flashing the firmware](#flashing-the-firmware) instructions.
+
+Flashing operations may erase stored credentials, particularly when partition layouts change. Avoid unnecessary full-chip erases.
+
+### Step 4 — Reconnect Ethernet or configure Wi-Fi
+
+After flashing, allow the Dongle-M to establish its Ethernet connection or use the SoftAP to provision Wi-Fi again if credentials were lost, as described in [First boot and network behaviour](#first-boot-and-network-behaviour). Wait until the device exits provisioning mode and reaches normal operation. Do not attempt OpenThread dataset commands while it remains in SoftAP mode.
+
+### Step 5 — Restore the Thread dataset
+
+Only after normal operation has resumed, reconnect the USB-C serial console and run:
+
+```text
+ot dataset active -x
+```
+
+Compare the active dataset with the saved backup. If it matches, leave it unchanged. Otherwise restore it using:
+
+```text
+ot dataset set active <YOUR_SAVED_HEX_DATASET>
+```
+
+Replace the placeholder with the saved hexadecimal dataset, then reboot the Dongle-M. Once the normal console is available again, verify the dataset:
+
+```text
+ot dataset active -x
+```
+
+Confirm that the restored dataset matches the backup.
+
+### Step 6 — Verify the existing Thread network
+
+Confirm that the Dongle-M has rejoined the original Thread network. Check Thread connectivity, the Web UI and Home Assistant. Preserving the original dataset should avoid having to recommission existing Matter-over-Thread devices.
+
+</details>
+
 ---
 
 # Flashing the firmware
@@ -107,7 +171,7 @@ This is the recommended method for most users.
 
 1. Download the latest merged firmware:
 
-   **[sonoff-dongle-m-otbr-v2.0.0.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.0/sonoff-dongle-m-otbr-v2.0.0.bin)**
+   **[sonoff-dongle-m-otbr-v2.0.1.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin)**
 
 2. Plug the Dongle-M into your computer using USB.
 
@@ -126,7 +190,7 @@ This is the recommended method for most users.
 7. Upload:
 
    ```text
-   sonoff-dongle-m-otbr-v2.0.0.bin
+   sonoff-dongle-m-otbr-v2.0.1.bin
    ```
 
 8. Start the flash.
@@ -148,7 +212,7 @@ The release image is a merged ESP32 image and should be written at address `0x0`
 ```powershell
 py -m esptool --chip esp32 --port COM3 --baud 460800 `
   --before default_reset --after hard_reset `
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.0.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.1.bin
 ```
 
 Replace `COM3` with the serial port used by your Dongle-M.
@@ -158,7 +222,7 @@ Replace `COM3` with the serial port used by your Dongle-M.
 ```bash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
   --before default_reset --after hard_reset \
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.0.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.1.bin
 ```
 
 Replace `/dev/ttyUSB0` with the correct serial device.
@@ -481,14 +545,14 @@ Tagged releases use the tag name in the output filename.
 For example:
 
 ```text
-v2.0.0
+v2.0.1
 ```
 
 produces:
 
 ```text
-sonoff-dongle-m-otbr-v2.0.0.bin
-sonoff-dongle-m-otbr-v2.0.0.bin.sha256
+sonoff-dongle-m-otbr-v2.0.1.bin
+sonoff-dongle-m-otbr-v2.0.1.bin.sha256
 ```
 
 The same files are attached automatically to the corresponding GitHub Release.
