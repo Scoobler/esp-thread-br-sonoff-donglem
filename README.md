@@ -93,6 +93,72 @@ This configures the onboard EFR32MG24 with the Thread RCP firmware expected by t
 >
 > It does not automatically flash or replace the MG24 firmware.
 
+> [!WARNING]
+> If you are upgrading an existing Dongle-M installation, [back up your Active Operational Dataset first](#dataset-backup--upgrade-notes). This applies to every firmware update, including v1 to v2 and later v2 releases. First-time installations do not have an existing dataset to back up.
+
+## Dataset Backup & Upgrade Notes
+
+If the Dongle-M already belongs to a Thread network, keep a secure copy of its Active Operational Dataset before flashing or upgrading. The manual backup remains useful even if a future firmware version preserves credentials automatically.
+
+<details>
+<summary><strong>How to back up and restore your Thread network</strong></summary>
+
+### Step 1 — Connect to the existing console
+
+Connect the Sonoff Dongle-M to a computer using USB-C. Open a serial terminal such as PuTTY at 115200 baud, 8N1, with no flow control.
+
+The console may continuously display ESP32 diagnostic messages. Press Enter to obtain the `esp32>` prompt.
+
+### Step 2 — Back up the Thread dataset
+
+Run:
+
+```text
+ot dataset active -x
+```
+
+Copy and securely save the complete hexadecimal Active Operational Dataset. It contains sensitive network credentials, including the Thread network key, so do not post it publicly.
+
+### Step 3 — Flash the new firmware
+
+Close the serial terminal to release the USB port, then follow the existing [Flashing the firmware](#flashing-the-firmware) instructions.
+
+Flashing operations may erase stored credentials, particularly when partition layouts change. Avoid unnecessary full-chip erases.
+
+### Step 4 — Restore the Thread dataset
+
+Reconnect the serial terminal after flashing. First run:
+
+```text
+ot dataset active -x
+```
+
+If the existing dataset is intact and matches the backup, do not overwrite it. If the dataset is missing or incorrect, restore it using:
+
+```text
+ot dataset set active <YOUR_SAVED_HEX_DATASET>
+```
+
+Replace the placeholder with the saved hexadecimal dataset. Reboot the Dongle-M after restoring it.
+
+Reconnect to the console and verify:
+
+```text
+ot dataset active -x
+```
+
+Confirm that the restored dataset matches the backup.
+
+### Step 5 — Reconfigure Wi-Fi if required
+
+Wi-Fi credentials may be lost during firmware updates. If Ethernet is connected, the Dongle-M should attempt Ethernet first. If Wi-Fi is required, use the firmware's provisioning access point to configure the connection again, as described in [First boot and network behaviour](#first-boot-and-network-behaviour).
+
+### Step 6 — Verify the existing Thread network
+
+Confirm that the Dongle-M has rejoined the original Thread network. Check Thread connectivity, the Web UI and Home Assistant. Preserving the original dataset should avoid having to recommission existing Matter-over-Thread devices.
+
+</details>
+
 ---
 
 # Flashing the firmware
