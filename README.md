@@ -125,33 +125,31 @@ Close the serial terminal to release the USB port, then follow the existing [Fla
 
 Flashing operations may erase stored credentials, particularly when partition layouts change. Avoid unnecessary full-chip erases.
 
-### Step 4 — Restore the Thread dataset
+### Step 4 — Reconnect Ethernet or configure Wi-Fi
 
-Reconnect the serial terminal after flashing. First run:
+After flashing, allow the Dongle-M to establish its Ethernet connection or use the SoftAP to provision Wi-Fi again if credentials were lost, as described in [First boot and network behaviour](#first-boot-and-network-behaviour). Wait until the device exits provisioning mode and reaches normal operation. Do not attempt OpenThread dataset commands while it remains in SoftAP mode.
+
+### Step 5 — Restore the Thread dataset
+
+Only after normal operation has resumed, reconnect the USB-C serial console and run:
 
 ```text
 ot dataset active -x
 ```
 
-If the existing dataset is intact and matches the backup, do not overwrite it. If the dataset is missing or incorrect, restore it using:
+Compare the active dataset with the saved backup. If it matches, leave it unchanged. Otherwise restore it using:
 
 ```text
 ot dataset set active <YOUR_SAVED_HEX_DATASET>
 ```
 
-Replace the placeholder with the saved hexadecimal dataset. Reboot the Dongle-M after restoring it.
-
-Reconnect to the console and verify:
+Replace the placeholder with the saved hexadecimal dataset, then reboot the Dongle-M. Once the normal console is available again, verify the dataset:
 
 ```text
 ot dataset active -x
 ```
 
 Confirm that the restored dataset matches the backup.
-
-### Step 5 — Reconfigure Wi-Fi if required
-
-Wi-Fi credentials may be lost during firmware updates. If Ethernet is connected, the Dongle-M should attempt Ethernet first. If Wi-Fi is required, use the firmware's provisioning access point to configure the connection again, as described in [First boot and network behaviour](#first-boot-and-network-behaviour).
 
 ### Step 6 — Verify the existing Thread network
 
