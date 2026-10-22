@@ -14,6 +14,37 @@ The goal is to keep the Dongle-M-specific patchset small, isolated and practical
 
 The public `main` branch is the canonical project history. Published history must not be rewritten simply to incorporate later upstream changes.
 
+## Contributor workflow
+
+Start every operation by fetching the latest `origin/main`. Work from a
+branch created from that current `main`; never rebase or rewrite published
+`main` history. Keep housekeeping work on its own branch, and keep Espressif
+updates on a dedicated `upstream-sync/<date>` or
+`upstream-sync/<short-commit>` branch.
+
+Do not create an upstream-sync branch when Espressif has no new upstream
+commits. An upstream-sync development branch may be pushed to GitHub and a
+Draft PR may be opened before hardware validation. GitHub Actions may build
+and publish CI artifacts for those PRs, but a Draft PR is not a release.
+
+Maintain `CHANGELOG.md` as part of contributor work. Add concise, factual
+entries for user-visible changes, identify contributors and PRs where useful,
+and distinguish unreleased work from published firmware changes. Upstream
+integrations should also prepare version-specific draft release notes without
+claiming hardware validation.
+
+Record the exact candidate source commit, ESP-IDF version, firmware SHA-256
+and incorporated upstream baseline. Never merge an upstream-sync PR into
+`main`, create a version tag, or publish a GitHub Release before the user
+explicitly reports `HARDWARE PASS`. Promotion is allowed after that report if
+the firmware-relevant source is unchanged. Any firmware-relevant change after
+hardware testing requires another hardware test; documentation-only release
+metadata may be finalized without rebuilding.
+
+The release process must work whether an upstream-sync Draft PR already exists
+or not. Preserve the safeguards below, including stopping an upstream update
+that requires a major redesign rather than a reasonable incremental merge.
+
 ---
 
 ## Maintenance principles
@@ -35,13 +66,13 @@ The public `main` branch is the canonical project history. Published history mus
 The v2 codebase currently contains Espressif upstream through:
 
 ```text
-0bad9f1f69cebe2e2ab768bbc6f71769a3661e33
+29a2345e3f0c61bba9307f3daea5ed0c94388ed3
 ```
 
 At the time this baseline was recorded:
 
 ```text
-upstream/main = 0bad9f1f69cebe2e2ab768bbc6f71769a3661e33
+upstream/main = 29a2345e3f0c61bba9307f3daea5ed0c94388ed3
 ```
 
 This value is a maintenance reference, not a permanent pin.
@@ -340,13 +371,13 @@ Example:
 
 ```text
 Previous upstream baseline:
-0bad9f1f69cebe2e2ab768bbc6f71769a3661e33
+<previous baseline>
 
 New upstream baseline:
 <new commit>
 
 Upstream comparison:
-0bad9f1f69cebe2e2ab768bbc6f71769a3661e33..<new commit>
+<previous baseline>..<new commit>
 ```
 
 ## Upstream changes incorporated
