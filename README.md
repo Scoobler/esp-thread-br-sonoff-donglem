@@ -27,11 +27,11 @@ This project provides a practical, self-contained OTBR solution with:
 
 ## Download
 
-### Latest release — v2.0.0
+### Latest release — v2.0.1
 
-**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.0/sonoff-dongle-m-otbr-v2.0.0.bin)**
+**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin)**
 
-**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.0/sonoff-dongle-m-otbr-v2.0.0.bin.sha256)**
+**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin.sha256)**
 
 The `.bin` above is the **merged ESP32 firmware image** intended for flashing directly onto a Sonoff Dongle-M.
 
@@ -171,7 +171,7 @@ This is the recommended method for most users.
 
 1. Download the latest merged firmware:
 
-   **[sonoff-dongle-m-otbr-v2.0.0.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.0/sonoff-dongle-m-otbr-v2.0.0.bin)**
+   **[sonoff-dongle-m-otbr-v2.0.1.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin)**
 
 2. Plug the Dongle-M into your computer using USB.
 
@@ -190,7 +190,7 @@ This is the recommended method for most users.
 7. Upload:
 
    ```text
-   sonoff-dongle-m-otbr-v2.0.0.bin
+   sonoff-dongle-m-otbr-v2.0.1.bin
    ```
 
 8. Start the flash.
@@ -212,7 +212,7 @@ The release image is a merged ESP32 image and should be written at address `0x0`
 ```powershell
 py -m esptool --chip esp32 --port COM3 --baud 460800 `
   --before default_reset --after hard_reset `
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.0.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.1.bin
 ```
 
 Replace `COM3` with the serial port used by your Dongle-M.
@@ -222,7 +222,7 @@ Replace `COM3` with the serial port used by your Dongle-M.
 ```bash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
   --before default_reset --after hard_reset \
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.0.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.1.bin
 ```
 
 Replace `/dev/ttyUSB0` with the correct serial device.
@@ -545,14 +545,14 @@ Tagged releases use the tag name in the output filename.
 For example:
 
 ```text
-v2.0.0
+v2.0.1
 ```
 
 produces:
 
 ```text
-sonoff-dongle-m-otbr-v2.0.0.bin
-sonoff-dongle-m-otbr-v2.0.0.bin.sha256
+sonoff-dongle-m-otbr-v2.0.1.bin
+sonoff-dongle-m-otbr-v2.0.1.bin.sha256
 ```
 
 The same files are attached automatically to the corresponding GitHub Release.
