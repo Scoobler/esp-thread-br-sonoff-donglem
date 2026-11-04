@@ -61,6 +61,36 @@ that requires a major redesign rather than a reasonable incremental merge.
 
 ---
 
+## GitHub Actions maintenance policy
+
+The approved workflow allowlist for `.github/workflows/` is:
+
+- `build_dongle_m.yml`
+- `check_upstream.yml`
+
+The workflow allowlist check in `build_dongle_m.yml` is the authoritative CI
+enforcement point for these filenames.
+
+During every Espressif upstream synchronisation:
+
+- Record the existing approved workflow files before merging.
+- Perform the normal upstream merge without rewriting history.
+- Inspect `.github/workflows/` immediately after the merge.
+- Remove any unapproved inherited Espressif workflows before committing or pushing the integration.
+- Preserve approved Sonoff-specific workflows and their configuration.
+- Never automatically inherit upstream issue handlers, PR handlers, release publishers, scheduled automation or external integrations.
+- Do not automatically enable workflows simply because they exist upstream.
+- If a new workflow is genuinely required, explicitly assess its triggers, permissions and purpose before adding it to the allowlist.
+- Update the allowlist whenever a new Sonoff-specific workflow is intentionally approved.
+
+A future GitHub Pages deployment workflow may eventually be added, but it is
+not yet approved or implemented.
+
+These rules apply specifically to `.github/workflows/`. Do not
+indiscriminately delete other upstream configuration files.
+
+---
+
 ## Current upstream baseline
 
 The v2 codebase currently contains Espressif upstream through:

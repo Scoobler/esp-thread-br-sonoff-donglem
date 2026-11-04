@@ -30,6 +30,32 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Validate approved GitHub Actions workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          unapproved=()
+          while IFS= read -r workflow; do
+            case "${workflow}" in
+              .github/workflows/build_dongle_m.yml|.github/workflows/check_upstream.yml)
+                ;;
+              *)
+                unapproved+=("${workflow}")
+                ;;
+            esac
+          done < <(git ls-files -- .github/workflows/)
+
+          if (( ${#unapproved[@]} > 0 )); then
+            for workflow in "${unapproved[@]}"; do
+              echo "::error::Unapproved GitHub Actions workflow: ${workflow}"
+            done
+            echo "Approved workflow files: build_dongle_m.yml, check_upstream.yml"
+            exit 1
+          fi
+
+          echo "Approved GitHub Actions workflow allowlist validated."
+
       - name: Build Dongle-M firmware
         shell: bash
         run: |
