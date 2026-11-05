@@ -14,6 +14,16 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - Pull-request firmware builds targeting `main`, including builds for Draft
   PRs, with read-only repository permissions.
 
+### Fixed
+
+- **Dongle-M network startup:** a present Ethernet link no longer falls back
+  to Wi-Fi or SoftAP provisioning when the DHCP lease takes a few seconds
+  longer, for example behind STP or 802.1X/MAB with dynamic VLANs. Networks
+  that deliver the lease late are remembered and get a 30 s DHCP wait,
+  provisioning ends when Ethernet becomes ready, and repeated Ethernet
+  recovery reboots back off to Wi-Fi. Reported in
+  [#5](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/5).
+
 ## [2.0.1] - Unreleased
 
 ### Added
