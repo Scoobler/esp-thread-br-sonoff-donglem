@@ -238,12 +238,15 @@ On boot, it attempts connectivity in this order:
 1. **Ethernet**
    - Ethernet is preferred.
    - If a usable Ethernet connection is obtained, it is selected.
+   - Without a cable, the firmware moves on after about 8 seconds.
+   - With a cable, it waits 10 seconds for a DHCP lease. If the lease arrives later, for example because of switch port authentication or spanning tree, later boots wait up to 30 seconds.
 
 2. **Saved Wi-Fi**
    - If Ethernet is unavailable, saved Wi-Fi credentials are tried.
 
 3. **Provisioning access point**
    - If no Wi-Fi credentials are stored, a provisioning SoftAP is started.
+   - If Ethernet becomes available while the SoftAP is open, the device leaves provisioning and reboots into Ethernet.
 
 4. **Wi-Fi recovery**
    - Repeated failed Wi-Fi connection attempts eventually trigger a recovery SoftAP.
@@ -267,7 +270,7 @@ The Dongle-M performs a controlled reboot so that normal startup can select Wi-F
 
 Ethernet must remain stable for approximately 30 seconds before a controlled reboot returns the unit to Ethernet.
 
-This avoids repeatedly switching interfaces during unstable network conditions.
+This avoids repeatedly switching interfaces during unstable network conditions. If Ethernet keeps returning but does not stay up, the device stays on Wi-Fi for 30 minutes after three attempts.
 
 ---
 
