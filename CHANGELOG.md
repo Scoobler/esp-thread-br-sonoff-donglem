@@ -19,10 +19,18 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - **Dongle-M network startup:** a present Ethernet link no longer falls back
   to Wi-Fi or SoftAP provisioning when the DHCP lease takes a few seconds
   longer, for example behind STP or 802.1X/MAB with dynamic VLANs. Networks
-  that deliver the lease late are remembered and get a 30 s DHCP wait,
+  that deliver the lease late are remembered and get a 30 s DHCP wait after
+  the normal 15 s link-up DHCP wait,
   provisioning ends when Ethernet becomes ready, and repeated Ethernet
-  recovery reboots back off to Wi-Fi. Reported in
-  [#5](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/5).
+  recovery reboots back off to Wi-Fi. Implements [Igor Sweet's
+  PR #8](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/pull/8)
+  for [#5](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/5).
+- **Dongle-M Ethernet readiness:** clear stale readiness after IPv4 or link
+  loss so fallback/provisioning cannot select an unavailable Ethernet
+  backbone.
+- **Dongle-M board profile:** correct MG24 metadata to reset GPIO15 and
+  bootloader-selection GPIO12; normal firmware operation still does not drive
+  either control pin or update MG24 firmware.
 
 ## [2.0.1] - Unreleased
 

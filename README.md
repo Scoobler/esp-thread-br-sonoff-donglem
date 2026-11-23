@@ -239,7 +239,7 @@ On boot, it attempts connectivity in this order:
    - Ethernet is preferred.
    - If a usable Ethernet connection is obtained, it is selected.
    - Without a cable, the firmware moves on after about 8 seconds.
-   - With a cable, it waits 10 seconds for a DHCP lease. If the lease arrives later, for example because of switch port authentication or spanning tree, later boots wait up to 30 seconds.
+   - With a cable, it waits 15 seconds for a DHCP lease. If the lease arrives later, for example because of switch port authentication or spanning tree, later boots wait up to 30 seconds.
 
 2. **Saved Wi-Fi**
    - If Ethernet is unavailable, saved Wi-Fi credentials are tried.
@@ -270,7 +270,7 @@ The Dongle-M performs a controlled reboot so that normal startup can select Wi-F
 
 Ethernet must remain stable for approximately 30 seconds before a controlled reboot returns the unit to Ethernet.
 
-This avoids repeatedly switching interfaces during unstable network conditions. If Ethernet keeps returning but does not stay up, the device stays on Wi-Fi for 30 minutes after three attempts.
+This avoids repeatedly switching interfaces during unstable network conditions. If Ethernet keeps returning but does not stay up, the device stays on Wi-Fi for 30 minutes after three attempts. The recovery attempt count is stored in NVS, but the 30-minute cooldown timer is RAM-only: a power cycle starts its cooldown timing again. Persisting cooldown time across resets is deferred.
 
 ---
 
@@ -438,9 +438,12 @@ The onboard RGB LED is active-high PWM controlled.
 
 ## MG24 control
 
-GPIO12 and GPIO15 are defined for MG24 reset / control functionality.
+| Function | ESP32 GPIO |
+| --- | --- |
+| Reset (active low) | GPIO15 |
+| Bootloader selection | GPIO12 |
 
-The current release does not automatically reflash the MG24.
+These pins are board metadata only in the current release; normal operation does not drive them and automatic MG24 flashing remains disabled. GPIO12 is an ESP32 bootstrapping pin, so any future active bootloader control must keep it from being driven high during ESP32 reset.
 
 ---
 

@@ -45,12 +45,12 @@ Validated on the tested Dongle-M:
 | --- | ---: |
 | RX | GPIO13 |
 | TX | GPIO17 |
-| Reset-related | GPIO12 |
-| Control/mute-related | GPIO15 |
+| Reset (active low) | GPIO15 |
+| Bootloader selection | GPIO12 |
 
 UART configuration is **115200 baud, 8N1, no flow control**.
 
-GPIO12 and GPIO15 are defined by the board profile but are not currently used to replace or update the MG24 firmware.
+GPIO12 and GPIO15 are board metadata only in the current profile and are not driven to replace or update the MG24 firmware. GPIO12 is an ESP32 bootstrapping pin; future active bootloader control must not drive it high while the ESP32 is resetting.
 
 ### Ethernet
 
@@ -145,9 +145,9 @@ The Dongle-M uses deterministic **Ethernet-first** infrastructure selection:
 | Situation at startup | Behaviour |
 |---|---|
 | No Ethernet link within 8 s | Use saved Wi-Fi (about 12 s), or open the first-time provisioning SoftAP if none is saved |
-| Ethernet link and IPv4 within 10 s | Use Ethernet |
-| Ethernet link, but no IPv4 within 10 s | Fall back as above |
-| The lease arrives after the wait gave up | Store a *slow DHCP* flag in NVS; later boots wait 30 s instead of 10 s |
+| Ethernet link and IPv4 within 15 s | Use Ethernet |
+| Ethernet link, but no IPv4 within 15 s | Fall back as above |
+| The lease arrives after the wait gave up | Store a *slow DHCP* flag in NVS; later boots wait 30 s instead of 15 s |
 | Flag set, but still no IPv4 within 30 s | Clear the flag and fall back; Ethernet is treated as failed |
 | Ethernet gets IPv4 while the provisioning SoftAP is open | Leave provisioning and reboot; the next boot selects Ethernet |
 | Saved Wi-Fi fails repeatedly | Open the recovery SoftAP |
@@ -195,6 +195,8 @@ When Wi-Fi is active:
 - normal startup restores preferred Ethernet operation;
 - after three such reboots without Ethernet staying up, the device stays on Wi-Fi for 30 minutes before trying again (`ESP_BR_DONGLE_M_ETHERNET_RECOVERY_MAX`);
 - ten minutes of stable Ethernet reset this backoff.
+
+The recovery-attempt count persists in NVS. The 30-minute cooldown timer is RAM-only, so a power cycle restarts the cooldown timing; persistence of cooldown timing across resets is deliberately deferred.
 
 The Thread dataset, Wi-Fi configuration and MG24 firmware are not deliberately altered by these recovery reboots.
 

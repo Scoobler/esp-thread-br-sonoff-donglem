@@ -118,6 +118,7 @@ static void ip_event_handler(void *arg, esp_event_base_t base, int32_t id, void 
     }
     if (id == IP_EVENT_ETH_LOST_IP) {
         state_set_ethernet(false, false, false, true);
+        xEventGroupClearBits(s_events, ETH_READY);
     } else if (data != NULL && (id == IP_EVENT_ETH_GOT_IP || id == IP_EVENT_STA_GOT_IP)) {
         ip_event_got_ip_t *event = data;
         const char *ifkey = esp_netif_get_ifkey(event->esp_netif);
@@ -142,7 +143,7 @@ static void ethernet_event_handler(void *arg, esp_event_base_t base, int32_t id,
         xEventGroupSetBits(s_events, ETH_LINK);
     } else if (id == ETHERNET_EVENT_DISCONNECTED) {
         state_set_ethernet(false, false, true, true);
-        xEventGroupClearBits(s_events, ETH_LINK);
+        xEventGroupClearBits(s_events, ETH_LINK | ETH_READY);
     }
 }
 
