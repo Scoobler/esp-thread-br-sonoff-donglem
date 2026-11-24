@@ -45,12 +45,12 @@ Validated on the tested Dongle-M:
 | --- | ---: |
 | RX | GPIO13 |
 | TX | GPIO17 |
-| Reset-related | GPIO12 |
-| Control/mute-related | GPIO15 |
+| Reset (active low) | GPIO15 |
+| Bootloader selection | GPIO12 |
 
 UART configuration is **115200 baud, 8N1, no flow control**.
 
-GPIO12 and GPIO15 are defined by the board profile but are not currently used to replace or update the MG24 firmware.
+GPIO12 and GPIO15 are board metadata only in the current profile and are not driven to replace or update the MG24 firmware. GPIO12 is an ESP32 bootstrapping pin; future active bootloader control must not drive it high while the ESP32 is resetting.
 
 ### Ethernet
 
@@ -142,11 +142,19 @@ Both behaviours were established during hardware testing and are retained in the
 
 The Dongle-M uses deterministic **Ethernet-first** infrastructure selection:
 
-1. Start Ethernet and wait approximately 10 seconds for usable connectivity.
-2. If successful, use Ethernet as the OpenThread backbone.
-3. Otherwise attempt saved Wi-Fi for approximately 12 seconds.
-4. If no Wi-Fi credentials exist, expose the first-time provisioning SoftAP.
-5. After repeated saved-Wi-Fi failures, expose the recovery SoftAP.
+| Situation at startup | Behaviour |
+|---|---|
+| No Ethernet link within 8 s | Use saved Wi-Fi (about 12 s), or open the first-time provisioning SoftAP if none is saved |
+| Ethernet link and IPv4 within 15 s | Use Ethernet |
+| Ethernet link, but no IPv4 within 15 s | Fall back as above |
+| The lease arrives after the wait gave up | Store a *slow DHCP* flag in NVS; later boots wait 30 s instead of 15 s |
+| Flag set, but still no IPv4 within 30 s | Clear the flag and fall back; Ethernet is treated as failed |
+| Ethernet gets IPv4 while the provisioning SoftAP is open | Leave provisioning and reboot; the next boot selects Ethernet |
+| Saved Wi-Fi fails repeatedly | Open the recovery SoftAP |
+
+The longer DHCP wait exists for switch ports that delay forwarding, such as STP/RSTP on non-edge ports or 802.1X/MAB with dynamic VLAN assignment; about 8.5 s from link-up to lease was observed on both. Without a cable only the short link wait applies, so Wi-Fi-only installations are not delayed. The waits are `ESP_BR_DONGLE_M_ETHERNET_LINK_WAIT_MS`, `ESP_BR_DONGLE_M_ETHERNET_WAIT_MS` and `ESP_BR_DONGLE_M_ETHERNET_SLOW_WAIT_MS`.
+
+Leaving provisioning reboots instead of continuing in the same boot because the upstream Web UI only starts on an IP event received outside provisioning mode; on an IPv4-only network it would otherwise stay down until the next boot.
 
 The Wi-Fi recovery threshold is five failed boots. The recovery SoftAP is available for approximately three minutes before normal retry behaviour resumes.
 
@@ -184,11 +192,18 @@ When Wi-Fi is active:
 - Ethernet must remain continuously available for **30 seconds**;
 - loss during that period cancels the timer;
 - after 30 seconds of stable Ethernet, the device performs a controlled reboot;
-- normal startup restores preferred Ethernet operation.
+- normal startup restores preferred Ethernet operation;
+- after three such reboots without Ethernet staying up, the device stays on Wi-Fi for 30 minutes before trying again (`ESP_BR_DONGLE_M_ETHERNET_RECOVERY_MAX`);
+- ten minutes of stable Ethernet reset this backoff.
+
+The recovery-attempt count persists in NVS. The 30-minute cooldown timer is RAM-only, so a power cycle restarts the cooldown timing; persistence of cooldown timing across resets is deliberately deferred.
 
 The Thread dataset, Wi-Fi configuration and MG24 firmware are not deliberately altered by these recovery reboots.
 
-This approach has been hardware validated in both directions.
+This approach has been hardware validated in both directions. The three-attempt
+recovery backoff, full 30-minute cooldown and cooldown expiry have also been
+exercised on hardware. Remembering a slow DHCP network in NVS and using the
+subsequent 30-second startup wait remain untested.
 
 ---
 
@@ -263,6 +278,16 @@ The test covered:
 9. successful restart using Ethernet.
 
 The metadata-driven merged-image path is therefore considered **hardware validated**.
+
+### v2.0.2 validation record
+
+The v2.0.2 candidate was validated on Ethernet and Wi-Fi Dongle-M units from
+source `178975dbf68cbf16631f3f942d6ebdec5f94dd8a`, built with ESP-IDF v5.5.4.
+Tests 1–5, 7 and 8 passed, including the full 30-minute Ethernet-recovery
+cooldown and its expiry. Remembered slow-DHCP/NVS behaviour was not tested.
+
+The tested firmware checksums were local `020bd736…` and CI `c0e96a58…`.
+They identify the tested images only; no binary-reproducibility claim is made.
 
 ---
 
