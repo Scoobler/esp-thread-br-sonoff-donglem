@@ -116,7 +116,7 @@ After a successfully validated upstream update is merged into `main`, update thi
 The most recently hardware-validated toolchain is:
 
 ```text
-ESP-IDF v5.5.4
+ESP-IDF v5.5.6
 ```
 
 Treat this as the known-good baseline, not a permanent version requirement.
