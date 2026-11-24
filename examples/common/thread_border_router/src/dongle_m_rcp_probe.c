@@ -13,7 +13,6 @@
 
 #include "driver/uart.h"
 #include "esp_log.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
 
@@ -202,13 +201,19 @@ static bool query_property(uint32_t property, uint8_t tid, char *ncp_version, si
     uint8_t encoded[sizeof(request) * 2 + 4];
     size_t encoded_length = hdlc_encode(request, sizeof(request), encoded, sizeof(encoded));
     dongle_m_hdlc_decoder_t decoder = {0};
-    int64_t deadline = esp_timer_get_time() + (int64_t)DONGLE_M_RESPONSE_TIMEOUT_MS * 1000;
+    TickType_t timeout_ticks = pdMS_TO_TICKS(DONGLE_M_RESPONSE_TIMEOUT_MS);
+    TickType_t deadline;
+
+    if (timeout_ticks == 0) {
+        timeout_ticks = 1;
+    }
+    deadline = xTaskGetTickCount() + timeout_ticks;
 
     if (encoded_length == 0 || uart_write_bytes(CONFIG_ESP_BR_RCP_UART_PORT, (const char *)encoded, encoded_length) != encoded_length ||
         uart_wait_tx_done(CONFIG_ESP_BR_RCP_UART_PORT, pdMS_TO_TICKS(50)) != ESP_OK) {
         return false;
     }
-    while (esp_timer_get_time() < deadline) {
+    while ((int32_t)(deadline - xTaskGetTickCount()) > 0) {
         uint8_t received[32];
         int received_length = uart_read_bytes(CONFIG_ESP_BR_RCP_UART_PORT, received, sizeof(received), pdMS_TO_TICKS(20));
         if (received_length < 0) {
