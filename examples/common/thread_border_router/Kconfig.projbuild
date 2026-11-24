@@ -102,6 +102,14 @@ menu "ESP Thread Border Router Example"
             depends on OPENTHREAD_RADIO_SPINEL_UART
 
         if ESP_BR_BOARD_SONOFF_DONGLE_M
+            config ESP_BR_DONGLE_M_WEB_GATE
+                bool "Start Dongle-M Web UI after OpenThread initialization"
+                default y
+                select OPENTHREAD_COMMISSIONER
+                select OPENTHREAD_JOINER
+                help
+                    Start the Dongle-M Web UI and Thread REST service only after
+                    ESP-IDF reports that OpenThread has initialized.
             config ESP_BR_DONGLE_M_ETHERNET_LINK_WAIT_MS
                 int "Dongle-M Ethernet link startup wait (ms)"
                 default 8000

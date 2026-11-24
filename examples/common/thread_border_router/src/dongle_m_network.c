@@ -10,12 +10,15 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "esp_br_web.h"
 #include "esp_br_wifi_config.h"
 #include "esp_check.h"
 #include "esp_eth.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_openthread_types.h"
 #include "esp_ot_wifi_cmd.h"
+#include "esp_spiffs.h"
 #include "esp_system.h"
 #include "example_common_private.h"
 #include "freertos/FreeRTOS.h"
@@ -43,6 +46,15 @@ static EventGroupHandle_t s_events;
 static TaskHandle_t s_eth_task;
 static TaskHandle_t s_runtime_task;
 static bool s_dhcp_timed_out;
+
+#if CONFIG_ESP_BR_DONGLE_M_WEB_GATE
+static portMUX_TYPE s_web_gate_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool s_web_gate_ot_ready;
+static bool s_web_gate_has_backbone;
+static bool s_web_gate_started;
+static ip_event_got_ip_t s_web_gate_got_ip;
+static int32_t s_web_gate_ip_event;
+#endif
 
 typedef enum {
     DONGLE_M_INFRA_NONE,
@@ -109,6 +121,82 @@ static esp_netif_t *netif_for_ifkey(const char *ifkey)
 {
     return esp_netif_get_handle_from_ifkey(ifkey);
 }
+
+#if CONFIG_ESP_BR_DONGLE_M_WEB_GATE
+static void dongle_m_web_gate_try_start(void)
+{
+    ip_event_got_ip_t got_ip;
+    int32_t ip_event;
+    bool start = false;
+
+    portENTER_CRITICAL(&s_web_gate_lock);
+    if (s_web_gate_ot_ready && s_web_gate_has_backbone && !s_web_gate_started) {
+        s_web_gate_started = true;
+        got_ip = s_web_gate_got_ip;
+        ip_event = s_web_gate_ip_event;
+        start = true;
+    }
+    portEXIT_CRITICAL(&s_web_gate_lock);
+
+    if (start) {
+        /* OPENTHREAD_EVENT_START is posted after ESP-IDF has initialized the
+         * OpenThread platform, instance, and lock. Replaying the confirmed
+         * backbone event preserves the upstream Web UI startup path. */
+        esp_br_web_start("/spiffs");
+        ESP_ERROR_CHECK(esp_event_post(IP_EVENT, ip_event, &got_ip, sizeof(got_ip), portMAX_DELAY));
+    }
+}
+
+static void dongle_m_web_gate_ot_started(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    (void)arg;
+    (void)data;
+    if (base == OPENTHREAD_EVENT && id == OPENTHREAD_EVENT_START) {
+        portENTER_CRITICAL(&s_web_gate_lock);
+        s_web_gate_ot_ready = true;
+        portEXIT_CRITICAL(&s_web_gate_lock);
+        dongle_m_web_gate_try_start();
+    }
+}
+
+static esp_err_t dongle_m_web_gate_init(void)
+{
+    esp_vfs_spiffs_conf_t web_storage = {
+        .base_path = "/spiffs", .partition_label = "web_storage", .max_files = 10, .format_if_mount_failed = false};
+
+    ESP_RETURN_ON_ERROR(esp_vfs_spiffs_register(&web_storage), TAG, "Failed to mount web storage");
+    return esp_event_handler_register(OPENTHREAD_EVENT, OPENTHREAD_EVENT_START, dongle_m_web_gate_ot_started, NULL);
+}
+
+static esp_err_t dongle_m_web_gate_select_backbone(esp_netif_t *backbone)
+{
+    ip_event_got_ip_t got_ip = {.esp_netif = backbone};
+    const char *ifkey;
+    int32_t ip_event;
+
+    if (backbone == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_RETURN_ON_ERROR(esp_netif_get_ip_info(backbone, &got_ip.ip_info), TAG, "Failed to get backbone IP");
+
+    ifkey = esp_netif_get_ifkey(backbone);
+    if (ifkey != NULL && strcmp(ifkey, "ETH_DEF") == 0) {
+        ip_event = IP_EVENT_ETH_GOT_IP;
+    } else if (ifkey != NULL && strcmp(ifkey, "WIFI_STA_DEF") == 0) {
+        ip_event = IP_EVENT_STA_GOT_IP;
+    } else {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    portENTER_CRITICAL(&s_web_gate_lock);
+    s_web_gate_got_ip = got_ip;
+    s_web_gate_ip_event = ip_event;
+    s_web_gate_has_backbone = true;
+    portEXIT_CRITICAL(&s_web_gate_lock);
+    dongle_m_web_gate_try_start();
+    return ESP_OK;
+}
+#endif
 
 static void ip_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
@@ -448,6 +536,9 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
                         "IP event registration failed");
     ESP_RETURN_ON_ERROR(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, ethernet_event_handler, NULL), TAG,
                         "Ethernet event registration failed");
+#if CONFIG_ESP_BR_DONGLE_M_WEB_GATE
+    ESP_RETURN_ON_ERROR(dongle_m_web_gate_init(), TAG, "Web startup gate initialization failed");
+#endif
 
     /* Dongle-M uses a single authoritative backbone for each boot. */
     if (xTaskCreate(ethernet_task, "dongle_eth", 4096, NULL, 4, &s_eth_task) != pdPASS) {
@@ -469,6 +560,9 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         state_set_selected(DONGLE_M_INFRA_ETHERNET);
         dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_ETHERNET);
         ESP_LOGI(TAG, "Selected Ethernet backbone");
+#if CONFIG_ESP_BR_DONGLE_M_WEB_GATE
+        ESP_RETURN_ON_ERROR(dongle_m_web_gate_select_backbone(*backbone), TAG, "Web startup gate selection failed");
+#endif
         return *backbone ? ESP_OK : ESP_FAIL;
     }
 
@@ -498,6 +592,9 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         state_set_selected(DONGLE_M_INFRA_WIFI);
         dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_WIFI);
         ESP_LOGI(TAG, "Selected Wi-Fi backbone");
+#if CONFIG_ESP_BR_DONGLE_M_WEB_GATE
+        ESP_RETURN_ON_ERROR(dongle_m_web_gate_select_backbone(*backbone), TAG, "Web startup gate selection failed");
+#endif
         return *backbone ? ESP_OK : ESP_FAIL;
     }
 
