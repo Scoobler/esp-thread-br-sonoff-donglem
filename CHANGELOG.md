@@ -5,7 +5,42 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.1.0] - 2026-11-24
+
+### Changed
+
+- Incorporated 13 Espressif `esp-thread-br` upstream commits, from
+  `29a2345e3f0c61bba9307f3daea5ed0c94388ed3` through
+  `847d04f9211d37f082d660fa1f54944d496fca16`: ot-br-posix 0.6.0-aligned
+  Thread REST API v2, refreshed Web UI and OpenAPI schema, REST-init deadlock
+  correction, and Web UI display fixes.
+- Updated the Dongle-M build toolchain to ESP-IDF v5.5.6. The 16 MB Sonoff
+  board profile remains unchanged despite the upstream 4 MB example profile.
+- Added a Sonoff-only Web UI startup gate that waits for
+  `OPENTHREAD_EVENT_START` before registering the upstream Web/REST server
+  and replaying the selected-backbone IP event. This fixes the startup
+  crash found during validation, without changing upstream application or
+  component source.
+- Preserved Ethernet-first selection, Wi-Fi provisioning/fallback, IPv6
+  multicast handling, fixed 115200-baud MG24 RCP, LED status and release
+  tooling. Only the two approved GitHub Actions workflows are present.
+
+### Validation
+
+- **HARDWARE PASS** recorded on 2026-11-24 for source commit
+  `c644ecde32650ad4e7bfd429bee3f3c5d256b72e`.
+- [CI run #39](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/actions/runs/45419406778)
+  passed on ESP-IDF v5.5.6. Tested CI merged firmware SHA-256:
+  `4f130a7253506dce571cb1f58d3d5794002f121dc0dc062c0586028945d7cfee`.
+- Physical tests passed on fresh-flashed Wi-Fi and Ethernet Dongle-M hardware:
+  stable boot, Wi-Fi setup, Ethernet failover/recovery, Web UI/REST, MG24
+  RCP, Thread/dataset, Home Assistant and LEDs. Observed on-mesh, local
+  OMR and on-link prefixes remained stable across reported reboots.
+- Tagged release binaries are rebuilt by CI; their SHA-256 may differ from
+  the hardware-tested CI image. Issues #9, #10 and #15 remain open and
+  outside the scope of this release.
+
+## [2.0.2] - 2026-11-24
 
 ### Added
 
@@ -13,6 +48,38 @@ and this project uses [Semantic Versioning](https://semver.org/).
   branches, Draft PRs, hardware validation, and release promotion.
 - Pull-request firmware builds targeting `main`, including builds for Draft
   PRs, with read-only repository permissions.
+
+### Fixed
+
+- **Dongle-M network startup:** a present Ethernet link no longer falls back
+  to Wi-Fi or SoftAP provisioning when the DHCP lease takes a few seconds
+  longer, for example behind STP or 802.1X/MAB with dynamic VLANs. Networks
+  that deliver the lease late are remembered and get a 30 s DHCP wait after
+  the normal 15 s link-up DHCP wait,
+  provisioning ends when Ethernet becomes ready, and repeated Ethernet
+  recovery reboots back off to Wi-Fi. This incorporates [Igor Sweet's
+  original PR #8](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/pull/8)
+  for [#5](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/5),
+  with the DHCP wait increased from 10 s to 15 s after link-up.
+- **Dongle-M Ethernet readiness:** clear stale readiness after IPv4 or link
+  loss so fallback/provisioning cannot select an unavailable Ethernet
+  backbone.
+- **Dongle-M board profile:** correct MG24 metadata to reset GPIO15 and
+  bootloader-selection GPIO12; normal firmware operation still does not drive
+  either control pin or update MG24 firmware.
+- **Dongle-M Ethernet multicast:** retain Igor Sweet's earlier [PR #4
+  fix](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/pull/4) for
+  IPv6 multicast reception on the Ethernet backbone.
+
+### Validation
+
+- Hardware validation passed on Ethernet and Wi-Fi Dongle-M units for tests
+  1–5, 7 and 8, including the complete 30-minute Ethernet-recovery cooldown
+  and its expiry. The remembered slow-DHCP/NVS behaviour remains untested.
+- Validated source: `178975dbf68cbf16631f3f942d6ebdec5f94dd8a`; ESP-IDF
+  v5.5.4. Tested firmware checksums: local `020bd736…`; CI `c0e96a58…`.
+  These are records of the tested images, not a claim of binary
+  reproducibility.
 
 ## [2.0.1] - Unreleased
 

@@ -27,11 +27,11 @@ This project provides a practical, self-contained OTBR solution with:
 
 ## Download
 
-### Latest release — v2.0.1
+### Latest release — v2.1.0
 
-**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin)**
+**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.1.0/sonoff-dongle-m-otbr-v2.1.0.bin)**
 
-**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin.sha256)**
+**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.1.0/sonoff-dongle-m-otbr-v2.1.0.bin.sha256)**
 
 The `.bin` above is the **merged ESP32 firmware image** intended for flashing directly onto a Sonoff Dongle-M.
 
@@ -88,6 +88,9 @@ Before flashing this firmware, the Dongle-M should first be configured using the
    **Thread RCP Mode**
 
 This configures the onboard EFR32MG24 with the Thread RCP firmware expected by this project.
+
+> [!IMPORTANT]
+> **RCP compatibility for ESP32 OTBR v2.1.0:** Use **Sonoff OpenThread RCP v2.4.4 (115200 baud)** on the EFR32MG24. The newer **Sonoff RCP v2.4.5 at 460800 baud** is **not compatible** with the fixed 115200-baud MG24 UART setting in OTBR v2.1.0. If your Dongle-M has v2.4.5, install the compatible v2.4.4 MG24 RCP using the [official Sonoff Dongle Flasher](https://dongle.sonoff.tech/sonoff-dongle-flasher/) before flashing the ESP32 host firmware. See [issue #15](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/15).
 
 > The current release updates the **ESP32 host firmware only**.
 >
@@ -171,7 +174,7 @@ This is the recommended method for most users.
 
 1. Download the latest merged firmware:
 
-   **[sonoff-dongle-m-otbr-v2.0.1.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin)**
+   **[sonoff-dongle-m-otbr-v2.1.0.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.1.0/sonoff-dongle-m-otbr-v2.1.0.bin)**
 
 2. Plug the Dongle-M into your computer using USB.
 
@@ -190,7 +193,7 @@ This is the recommended method for most users.
 7. Upload:
 
    ```text
-   sonoff-dongle-m-otbr-v2.0.1.bin
+   sonoff-dongle-m-otbr-v2.1.0.bin
    ```
 
 8. Start the flash.
@@ -207,12 +210,14 @@ The Dongle-M will reboot automatically when flashing completes.
 
 The release image is a merged ESP32 image and should be written at address `0x0`.
 
+The `--baud 460800` setting in the commands below is the **ESP32 USB flashing speed**, not the UART speed between the ESP32 and the MG24 RCP (which is fixed at **115200** in OTBR v2.1.0).
+
 ### Windows PowerShell
 
 ```powershell
 py -m esptool --chip esp32 --port COM3 --baud 460800 `
   --before default_reset --after hard_reset `
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.1.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.1.0.bin
 ```
 
 Replace `COM3` with the serial port used by your Dongle-M.
@@ -222,7 +227,7 @@ Replace `COM3` with the serial port used by your Dongle-M.
 ```bash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
   --before default_reset --after hard_reset \
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.1.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.1.0.bin
 ```
 
 Replace `/dev/ttyUSB0` with the correct serial device.
@@ -238,12 +243,15 @@ On boot, it attempts connectivity in this order:
 1. **Ethernet**
    - Ethernet is preferred.
    - If a usable Ethernet connection is obtained, it is selected.
+   - Without a cable, the firmware moves on after about 8 seconds.
+   - With a cable, it waits 15 seconds for a DHCP lease. If the lease arrives later, for example because of switch port authentication or spanning tree, later boots wait up to 30 seconds.
 
 2. **Saved Wi-Fi**
    - If Ethernet is unavailable, saved Wi-Fi credentials are tried.
 
 3. **Provisioning access point**
    - If no Wi-Fi credentials are stored, a provisioning SoftAP is started.
+   - If Ethernet becomes available while the SoftAP is open, the device leaves provisioning and reboots into Ethernet.
 
 4. **Wi-Fi recovery**
    - Repeated failed Wi-Fi connection attempts eventually trigger a recovery SoftAP.
@@ -267,7 +275,7 @@ The Dongle-M performs a controlled reboot so that normal startup can select Wi-F
 
 Ethernet must remain stable for approximately 30 seconds before a controlled reboot returns the unit to Ethernet.
 
-This avoids repeatedly switching interfaces during unstable network conditions.
+This avoids repeatedly switching interfaces during unstable network conditions. If Ethernet keeps returning but does not stay up, the device stays on Wi-Fi for 30 minutes after three attempts. The recovery attempt count is stored in NVS, but the 30-minute cooldown timer is RAM-only: a power cycle starts its cooldown timing again. Persisting cooldown time across resets is deferred.
 
 ---
 
@@ -435,9 +443,12 @@ The onboard RGB LED is active-high PWM controlled.
 
 ## MG24 control
 
-GPIO12 and GPIO15 are defined for MG24 reset / control functionality.
+| Function | ESP32 GPIO |
+| --- | --- |
+| Reset (active low) | GPIO15 |
+| Bootloader selection | GPIO12 |
 
-The current release does not automatically reflash the MG24.
+These pins are board metadata only in the current release; normal operation does not drive them and automatic MG24 flashing remains disabled. GPIO12 is an ESP32 bootstrapping pin, so any future active bootloader control must keep it from being driven high during ESP32 reset.
 
 ---
 
@@ -446,7 +457,7 @@ The current release does not automatically reflash the MG24.
 The current validated build environment uses:
 
 ```text
-ESP-IDF v5.5.4
+ESP-IDF v5.5.6
 ```
 
 Clone the repository:
@@ -545,14 +556,14 @@ Tagged releases use the tag name in the output filename.
 For example:
 
 ```text
-v2.0.1
+v2.1.0
 ```
 
 produces:
 
 ```text
-sonoff-dongle-m-otbr-v2.0.1.bin
-sonoff-dongle-m-otbr-v2.0.1.bin.sha256
+sonoff-dongle-m-otbr-v2.1.0.bin
+sonoff-dongle-m-otbr-v2.1.0.bin.sha256
 ```
 
 The same files are attached automatically to the corresponding GitHub Release.
@@ -575,7 +586,7 @@ The merged image provided by this project is a raw ESP32 flash image and is **no
 
 # MG24 RCP
 
-The currently supported RCP is the stock Sonoff EFR32MG24 OpenThread RCP.
+The supported MG24 radio firmware for ESP32 OTBR v2.1.0 is **Sonoff OpenThread RCP v2.4.4 at 115200 baud** (see [issue #15](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/15)). The newer Sonoff v2.4.5 RCP image configured for 460800 baud is not supported by this release.
 
 The ESP32 host communicates with it using Spinel over UART.
 
@@ -583,9 +594,9 @@ A future improvement may be to provide a fully reproducible host + RCP release p
 
 For now, the safe and validated approach is:
 
-1. use the stock Sonoff firmware to place the MG24 into Thread RCP Mode;
+1. use the stock Sonoff firmware to place the MG24 into Thread RCP Mode and ensure **RCP v2.4.4 (115200 baud)** is installed (downgrade from v2.4.5 if necessary);
 2. flash the custom ESP32 OTBR firmware;
-3. leave the MG24 RCP firmware unchanged.
+3. leave the compatible MG24 RCP firmware unchanged during future ESP32-only upgrades.
 
 ---
 

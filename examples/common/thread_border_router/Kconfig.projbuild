@@ -34,14 +34,14 @@ menu "ESP Thread Border Router Example"
     menu "Board Configuration"
         config PIN_TO_RCP_RESET
             int "Pin to RCP reset"
-            default 12 if ESP_BR_BOARD_SONOFF_DONGLE_M
+            default 15 if ESP_BR_BOARD_SONOFF_DONGLE_M
             default 7 if ESP_BR_BOARD_DEV_KIT
             default 7 if ESP_BR_BOARD_STANDALONE
             default 7 if ESP_BR_BOARD_M5STACK_CORES3
 
         config PIN_TO_RCP_BOOT
             int "Pin to RCP boot"
-            default 15 if ESP_BR_BOARD_SONOFF_DONGLE_M
+            default 12 if ESP_BR_BOARD_SONOFF_DONGLE_M
             default 8 if ESP_BR_BOARD_DEV_KIT
             default 8 if ESP_BR_BOARD_STANDALONE
             default 18 if ESP_BR_BOARD_M5STACK_CORES3
@@ -102,10 +102,26 @@ menu "ESP Thread Border Router Example"
             depends on OPENTHREAD_RADIO_SPINEL_UART
 
         if ESP_BR_BOARD_SONOFF_DONGLE_M
-            config ESP_BR_DONGLE_M_ETHERNET_WAIT_MS
-                int "Dongle-M Ethernet startup wait (ms)"
-                default 10000
+            config ESP_BR_DONGLE_M_WEB_GATE
+                bool "Start Dongle-M Web UI after OpenThread initialization"
+                default y
+                select OPENTHREAD_COMMISSIONER
+                select OPENTHREAD_JOINER
+                help
+                    Start the Dongle-M Web UI and Thread REST service only after
+                    ESP-IDF reports that OpenThread has initialized.
+            config ESP_BR_DONGLE_M_ETHERNET_LINK_WAIT_MS
+                int "Dongle-M Ethernet link startup wait (ms)"
+                default 8000
                 range 1000 60000
+            config ESP_BR_DONGLE_M_ETHERNET_WAIT_MS
+                int "Dongle-M Ethernet DHCP startup wait after link up (ms)"
+                default 15000
+                range 1000 300000
+            config ESP_BR_DONGLE_M_ETHERNET_SLOW_WAIT_MS
+                int "Dongle-M extended Ethernet DHCP wait on slow DHCP networks (ms)"
+                default 30000
+                range 1000 300000
             config ESP_BR_DONGLE_M_WIFI_WAIT_MS
                 int "Dongle-M Wi-Fi startup wait (ms)"
                 default 12000
@@ -126,6 +142,10 @@ menu "ESP Thread Border Router Example"
                 int "Dongle-M Ethernet recovery stability (ms)"
                 default 30000
                 range 1000 300000
+            config ESP_BR_DONGLE_M_ETHERNET_RECOVERY_MAX
+                int "Dongle-M Ethernet recovery reboots before a 30 min backoff"
+                default 3
+                range 1 20
             config ESP_BR_DONGLE_M_LED_PULSE_INTERVAL_MS
                 int "Dongle-M LED pulse interval (ms)"
                 default 2000
@@ -140,10 +160,10 @@ menu "ESP Thread Border Router Example"
                 range 0 120000
             config ESP_BR_BOARD_MG24_RESET_GPIO
                 int
-                default 12
+                default 15
             config ESP_BR_BOARD_MG24_CONTROL_GPIO
                 int
-                default 15
+                default 12
             config ESP_BR_BOARD_LED_RED_GPIO
                 int
                 default 4

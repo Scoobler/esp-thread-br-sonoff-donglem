@@ -39,7 +39,7 @@ _Static_assert(CONFIG_ESP_BR_RCP_UART_BAUDRATE == 115200, "Dongle-M stock MG24 r
 _Static_assert(CONFIG_PIN_TO_RCP_TX == 13, "Dongle-M host RX/RCP TX must use GPIO13");
 _Static_assert(CONFIG_PIN_TO_RCP_RX == 17, "Dongle-M host TX/RCP RX must use GPIO17");
 _Static_assert(CONFIG_PIN_TO_RCP_RESET == CONFIG_ESP_BR_BOARD_MG24_RESET_GPIO, "MG24 reset GPIO mismatch");
-_Static_assert(CONFIG_PIN_TO_RCP_BOOT == CONFIG_ESP_BR_BOARD_MG24_CONTROL_GPIO, "MG24 control GPIO mismatch");
+_Static_assert(CONFIG_PIN_TO_RCP_BOOT == CONFIG_ESP_BR_BOARD_MG24_CONTROL_GPIO, "MG24 bootloader GPIO mismatch");
 _Static_assert(CONFIG_EXAMPLE_ETH_MDC_GPIO == CONFIG_ESP_BR_BOARD_ETH_MDC_GPIO, "Ethernet MDC GPIO mismatch");
 _Static_assert(CONFIG_EXAMPLE_ETH_MDIO_GPIO == CONFIG_ESP_BR_BOARD_ETH_MDIO_GPIO, "Ethernet MDIO GPIO mismatch");
 _Static_assert(CONFIG_EXAMPLE_ETH_PHY_RST_GPIO == CONFIG_ESP_BR_BOARD_ETH_RESET_GPIO, "Ethernet reset GPIO mismatch");
@@ -54,7 +54,7 @@ void esp_br_board_log_profile(void)
     ESP_LOGI(TAG, "Stock MG24 RCP: UART%d, host RX GPIO%d, host TX GPIO%d, %d 8N1, no flow control",
              CONFIG_ESP_BR_RCP_UART_PORT, CONFIG_PIN_TO_RCP_TX, CONFIG_PIN_TO_RCP_RX,
              CONFIG_ESP_BR_RCP_UART_BAUDRATE);
-    ESP_LOGI(TAG, "MG24 control GPIOs: reset GPIO%d, control GPIO%d (defined only; automatic update disabled)",
+    ESP_LOGI(TAG, "MG24 control GPIOs: reset GPIO%d, bootloader GPIO%d (defined only; automatic update disabled)",
              CONFIG_ESP_BR_BOARD_MG24_RESET_GPIO, CONFIG_ESP_BR_BOARD_MG24_CONTROL_GPIO);
     ESP_LOGI(TAG, "Ethernet: IP101GA RMII, PHY addr %d, MDC GPIO%d, MDIO GPIO%d, reset GPIO%d, clock input GPIO%d",
              CONFIG_ESP_BR_BOARD_ETH_PHY_ADDR, CONFIG_ESP_BR_BOARD_ETH_MDC_GPIO,

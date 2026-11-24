@@ -10,12 +10,15 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "esp_br_web.h"
 #include "esp_br_wifi_config.h"
 #include "esp_check.h"
 #include "esp_eth.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_openthread_types.h"
 #include "esp_ot_wifi_cmd.h"
+#include "esp_spiffs.h"
 #include "esp_system.h"
 #include "example_common_private.h"
 #include "freertos/FreeRTOS.h"
@@ -28,14 +31,30 @@
 #define NVS_NAMESPACE "br"
 #define NVS_FAIL_COUNT "fail_count"
 #define NVS_LAST_SSID "last_ssid"
+#define NVS_SLOW_DHCP "slow_dhcp"
+#define NVS_ETH_RECOVERIES "eth_recover"
 #define SSID_MAX_LEN 32
 #define PASSWORD_MAX_LEN 64
 #define ETH_READY BIT0
 #define WIFI_READY BIT1
+#define ETH_LINK BIT2
+#define PROVISION_POLL_MS 1000
+#define ETH_RECOVERY_COOLDOWN_MS (30 * 60 * 1000)
+#define ETH_RECOVERY_RESET_MS (10 * 60 * 1000)
 
 static EventGroupHandle_t s_events;
 static TaskHandle_t s_eth_task;
 static TaskHandle_t s_runtime_task;
+static bool s_dhcp_timed_out;
+
+#if CONFIG_ESP_BR_DONGLE_M_WEB_GATE
+static portMUX_TYPE s_web_gate_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool s_web_gate_ot_ready;
+static bool s_web_gate_has_backbone;
+static bool s_web_gate_started;
+static ip_event_got_ip_t s_web_gate_got_ip;
+static int32_t s_web_gate_ip_event;
+#endif
 
 typedef enum {
     DONGLE_M_INFRA_NONE,
@@ -43,6 +62,12 @@ typedef enum {
     DONGLE_M_INFRA_WIFI,
     DONGLE_M_INFRA_PROVISIONING,
 } dongle_m_infra_t;
+
+typedef enum {
+    PROVISION_FAILED,
+    PROVISION_WIFI,
+    PROVISION_ETHERNET,
+} provision_result_t;
 
 typedef struct {
     dongle_m_infra_t selected;
@@ -97,6 +122,82 @@ static esp_netif_t *netif_for_ifkey(const char *ifkey)
     return esp_netif_get_handle_from_ifkey(ifkey);
 }
 
+#if CONFIG_ESP_BR_DONGLE_M_WEB_GATE
+static void dongle_m_web_gate_try_start(void)
+{
+    ip_event_got_ip_t got_ip;
+    int32_t ip_event;
+    bool start = false;
+
+    portENTER_CRITICAL(&s_web_gate_lock);
+    if (s_web_gate_ot_ready && s_web_gate_has_backbone && !s_web_gate_started) {
+        s_web_gate_started = true;
+        got_ip = s_web_gate_got_ip;
+        ip_event = s_web_gate_ip_event;
+        start = true;
+    }
+    portEXIT_CRITICAL(&s_web_gate_lock);
+
+    if (start) {
+        /* OPENTHREAD_EVENT_START is posted after ESP-IDF has initialized the
+         * OpenThread platform, instance, and lock. Replaying the confirmed
+         * backbone event preserves the upstream Web UI startup path. */
+        esp_br_web_start("/spiffs");
+        ESP_ERROR_CHECK(esp_event_post(IP_EVENT, ip_event, &got_ip, sizeof(got_ip), portMAX_DELAY));
+    }
+}
+
+static void dongle_m_web_gate_ot_started(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    (void)arg;
+    (void)data;
+    if (base == OPENTHREAD_EVENT && id == OPENTHREAD_EVENT_START) {
+        portENTER_CRITICAL(&s_web_gate_lock);
+        s_web_gate_ot_ready = true;
+        portEXIT_CRITICAL(&s_web_gate_lock);
+        dongle_m_web_gate_try_start();
+    }
+}
+
+static esp_err_t dongle_m_web_gate_init(void)
+{
+    esp_vfs_spiffs_conf_t web_storage = {
+        .base_path = "/spiffs", .partition_label = "web_storage", .max_files = 10, .format_if_mount_failed = false};
+
+    ESP_RETURN_ON_ERROR(esp_vfs_spiffs_register(&web_storage), TAG, "Failed to mount web storage");
+    return esp_event_handler_register(OPENTHREAD_EVENT, OPENTHREAD_EVENT_START, dongle_m_web_gate_ot_started, NULL);
+}
+
+static esp_err_t dongle_m_web_gate_select_backbone(esp_netif_t *backbone)
+{
+    ip_event_got_ip_t got_ip = {.esp_netif = backbone};
+    const char *ifkey;
+    int32_t ip_event;
+
+    if (backbone == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_RETURN_ON_ERROR(esp_netif_get_ip_info(backbone, &got_ip.ip_info), TAG, "Failed to get backbone IP");
+
+    ifkey = esp_netif_get_ifkey(backbone);
+    if (ifkey != NULL && strcmp(ifkey, "ETH_DEF") == 0) {
+        ip_event = IP_EVENT_ETH_GOT_IP;
+    } else if (ifkey != NULL && strcmp(ifkey, "WIFI_STA_DEF") == 0) {
+        ip_event = IP_EVENT_STA_GOT_IP;
+    } else {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    portENTER_CRITICAL(&s_web_gate_lock);
+    s_web_gate_got_ip = got_ip;
+    s_web_gate_ip_event = ip_event;
+    s_web_gate_has_backbone = true;
+    portEXIT_CRITICAL(&s_web_gate_lock);
+    dongle_m_web_gate_try_start();
+    return ESP_OK;
+}
+#endif
+
 static void ip_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg;
@@ -105,6 +206,7 @@ static void ip_event_handler(void *arg, esp_event_base_t base, int32_t id, void 
     }
     if (id == IP_EVENT_ETH_LOST_IP) {
         state_set_ethernet(false, false, false, true);
+        xEventGroupClearBits(s_events, ETH_READY);
     } else if (data != NULL && (id == IP_EVENT_ETH_GOT_IP || id == IP_EVENT_STA_GOT_IP)) {
         ip_event_got_ip_t *event = data;
         const char *ifkey = esp_netif_get_ifkey(event->esp_netif);
@@ -126,8 +228,10 @@ static void ethernet_event_handler(void *arg, esp_event_base_t base, int32_t id,
     }
     if (id == ETHERNET_EVENT_CONNECTED) {
         state_set_ethernet(true, false, true, false);
+        xEventGroupSetBits(s_events, ETH_LINK);
     } else if (id == ETHERNET_EVENT_DISCONNECTED) {
         state_set_ethernet(false, false, true, true);
+        xEventGroupClearBits(s_events, ETH_LINK | ETH_READY);
     }
 }
 
@@ -140,25 +244,35 @@ static void ethernet_task(void *arg)
     vTaskDelete(NULL);
 }
 
-static uint8_t fail_count_get(void)
+static uint8_t nvs_u8_get(const char *key)
 {
     nvs_handle_t handle;
     uint8_t value = 0;
     if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
-        nvs_get_u8(handle, NVS_FAIL_COUNT, &value);
+        nvs_get_u8(handle, key, &value);
         nvs_close(handle);
     }
     return value;
 }
 
-static void fail_count_set(uint8_t value)
+static void nvs_u8_set(const char *key, uint8_t value)
 {
     nvs_handle_t handle;
     if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
-        nvs_set_u8(handle, NVS_FAIL_COUNT, value);
+        nvs_set_u8(handle, key, value);
         nvs_commit(handle);
         nvs_close(handle);
     }
+}
+
+static uint8_t fail_count_get(void)
+{
+    return nvs_u8_get(NVS_FAIL_COUNT);
+}
+
+static void fail_count_set(uint8_t value)
+{
+    nvs_u8_set(NVS_FAIL_COUNT, value);
 }
 
 static void fail_count_reset(void)
@@ -207,26 +321,47 @@ static bool wifi_start_nonblocking(const char *ssid, const char *password)
     return example_wifi_sta_do_connect(config, false) == ESP_OK;
 }
 
-static bool provision_wifi(char *ssid, char *password, uint32_t timeout_ms)
+static provision_result_t provision_wifi(char *ssid, char *password, uint32_t timeout_ms)
 {
+    provision_result_t result = PROVISION_FAILED;
+    TickType_t started = xTaskGetTickCount();
+
     dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_SOFTAP);
     if (esp_br_wifi_config_start() != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start provisioning SoftAP");
-        return false;
+        return PROVISION_FAILED;
     }
-    esp_err_t err = esp_br_wifi_config_get_configured_wifi(ssid, SSID_MAX_LEN, password, PASSWORD_MAX_LEN,
-                                                            timeout_ms);
+    /* Poll in short slices so a late Ethernet lease ends provisioning instead of being ignored. */
+    for (;;) {
+        esp_err_t err = esp_br_wifi_config_get_configured_wifi(ssid, SSID_MAX_LEN, password, PASSWORD_MAX_LEN,
+                                                                PROVISION_POLL_MS);
+        if (err == ESP_OK && ssid[0] != '\0') {
+            result = PROVISION_WIFI;
+            break;
+        }
+        if (err != ESP_ERR_TIMEOUT) {
+            break;
+        }
+        if (xEventGroupGetBits(s_events) & ETH_READY) {
+            ESP_LOGI(TAG, "Ethernet became ready during provisioning; leaving SoftAP");
+            result = PROVISION_ETHERNET;
+            break;
+        }
+        if (timeout_ms != 0 && xTaskGetTickCount() - started >= pdMS_TO_TICKS(timeout_ms)) {
+            break;
+        }
+    }
     esp_br_wifi_config_stop();
-    return err == ESP_OK && ssid[0] != '\0';
+    return result;
 }
 
-static bool provision_first_time_wifi(char *ssid, char *password)
+static provision_result_t provision_first_time_wifi(char *ssid, char *password)
 {
-    /* First-time provisioning remains active until the user supplies Wi-Fi. */
+    /* First-time provisioning remains active until the user supplies Wi-Fi or Ethernet becomes ready. */
     return provision_wifi(ssid, password, 0);
 }
 
-static bool provision_recovery_wifi(char *ssid, char *password)
+static provision_result_t provision_recovery_wifi(char *ssid, char *password)
 {
     /* Recovery provisioning is deliberately bounded so normal boot retries resume. */
     return provision_wifi(ssid, password, CONFIG_ESP_BR_DONGLE_M_SOFTAP_WINDOW_MS);
@@ -235,6 +370,41 @@ static bool provision_recovery_wifi(char *ssid, char *password)
 static bool wait_for(EventBits_t bit, uint32_t timeout_ms)
 {
     return (xEventGroupWaitBits(s_events, bit, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms)) & bit) != 0;
+}
+
+static bool wait_for_ethernet(void)
+{
+    /* A missing link falls back quickly. A present link gets a short DHCP wait, or an extended one once this
+     * network has been seen to deliver the lease late (switch-side 802.1X/MAB, dynamic VLAN, STP delay). */
+    bool slow_network = nvs_u8_get(NVS_SLOW_DHCP) != 0;
+    uint32_t dhcp_wait_ms =
+        slow_network ? CONFIG_ESP_BR_DONGLE_M_ETHERNET_SLOW_WAIT_MS : CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS;
+
+    if (!wait_for(ETH_LINK, CONFIG_ESP_BR_DONGLE_M_ETHERNET_LINK_WAIT_MS)) {
+        ESP_LOGI(TAG, "No Ethernet link within %u ms", (unsigned)CONFIG_ESP_BR_DONGLE_M_ETHERNET_LINK_WAIT_MS);
+        return false;
+    }
+    ESP_LOGI(TAG, "Ethernet link up; waiting up to %u ms for IPv4%s", (unsigned)dhcp_wait_ms,
+             slow_network ? " (slow DHCP network)" : "");
+    if (!wait_for(ETH_READY, dhcp_wait_ms)) {
+        ESP_LOGW(TAG, "Ethernet link up but no IPv4 within %u ms", (unsigned)dhcp_wait_ms);
+        s_dhcp_timed_out = true;
+        if (slow_network) {
+            /* Even the extended wait was not enough, so treat Ethernet as failed and use the short wait again. */
+            nvs_u8_set(NVS_SLOW_DHCP, 0);
+        }
+        return false;
+    }
+    return true;
+}
+
+static void remember_slow_dhcp(void)
+{
+    /* Ethernet delivered a lease after the startup wait had given up with the link present. */
+    if (s_dhcp_timed_out && nvs_u8_get(NVS_SLOW_DHCP) == 0) {
+        ESP_LOGI(TAG, "Ethernet IPv4 arrived after the startup wait; using the extended DHCP wait from now on");
+        nvs_u8_set(NVS_SLOW_DHCP, 1);
+    }
 }
 
 static void request_reboot(const char *message)
@@ -253,6 +423,12 @@ static void request_reboot(const char *message)
 static void runtime_monitor_task(void *arg)
 {
     (void)arg;
+    bool usable_tracking = false;
+    bool recoveries_reset = false;
+    bool cooldown = false;
+    TickType_t usable_since = 0;
+    TickType_t cooldown_started = 0;
+
     for (;;) {
         dongle_m_network_state_t state = state_snapshot();
         TickType_t now = xTaskGetTickCount();
@@ -267,7 +443,19 @@ static void runtime_monitor_task(void *arg)
                 s_state.failure_confirming = false;
                 s_state.failure_action_handled = false;
                 portEXIT_CRITICAL(&s_state_lock);
+                /* Only Ethernet that stays up for a while clears the recovery backoff. */
+                if (!usable_tracking) {
+                    usable_tracking = true;
+                    usable_since = now;
+                } else if (!recoveries_reset && now - usable_since >= pdMS_TO_TICKS(ETH_RECOVERY_RESET_MS)) {
+                    if (nvs_u8_get(NVS_ETH_RECOVERIES) != 0) {
+                        ESP_LOGI(TAG, "Ethernet stable; reset recovery backoff");
+                        nvs_u8_set(NVS_ETH_RECOVERIES, 0);
+                    }
+                    recoveries_reset = true;
+                }
             } else if (!state.failure_confirming) {
+                usable_tracking = false;
                 ESP_LOGW(TAG, "Ethernet lost; starting %u second recovery confirmation",
                          (unsigned)(CONFIG_ESP_BR_DONGLE_M_ETHERNET_FAILURE_CONFIRM_MS / 1000));
                 portENTER_CRITICAL(&s_state_lock);
@@ -304,7 +492,24 @@ static void runtime_monitor_task(void *arg)
             } else if (ethernet_usable && state.recovery_confirming &&
                        now - state.recovery_started >=
                            pdMS_TO_TICKS(CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_STABLE_MS)) {
-                request_reboot("Ethernet stable; rebooting to restore preferred Ethernet infrastructure");
+                if (cooldown) {
+                    if (now - cooldown_started >= pdMS_TO_TICKS(ETH_RECOVERY_COOLDOWN_MS)) {
+                        ESP_LOGI(TAG, "Ethernet recovery cooldown expired; allowing one more attempt");
+                        nvs_u8_set(NVS_ETH_RECOVERIES, CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_MAX - 1);
+                        cooldown = false;
+                    }
+                } else if (nvs_u8_get(NVS_ETH_RECOVERIES) >= CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_MAX) {
+                    /* Ethernet keeps coming back but does not stay up; keep Thread running over Wi-Fi. */
+                    ESP_LOGW(TAG, "Ethernet recovered %u times without staying up; staying on Wi-Fi for %u min",
+                             (unsigned)CONFIG_ESP_BR_DONGLE_M_ETHERNET_RECOVERY_MAX,
+                             (unsigned)(ETH_RECOVERY_COOLDOWN_MS / 60000));
+                    cooldown = true;
+                    cooldown_started = now;
+                } else {
+                    nvs_u8_set(NVS_ETH_RECOVERIES, nvs_u8_get(NVS_ETH_RECOVERIES) + 1);
+                    remember_slow_dhcp();
+                    request_reboot("Ethernet stable; rebooting to restore preferred Ethernet infrastructure");
+                }
             }
         }
 
@@ -316,6 +521,7 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
 {
     char ssid[SSID_MAX_LEN] = {0};
     char password[PASSWORD_MAX_LEN] = {0};
+    provision_result_t provision;
     uint8_t failures;
 
     if (!backbone) {
@@ -330,12 +536,15 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
                         "IP event registration failed");
     ESP_RETURN_ON_ERROR(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, ethernet_event_handler, NULL), TAG,
                         "Ethernet event registration failed");
+#if CONFIG_ESP_BR_DONGLE_M_WEB_GATE
+    ESP_RETURN_ON_ERROR(dongle_m_web_gate_init(), TAG, "Web startup gate initialization failed");
+#endif
 
     /* Dongle-M uses a single authoritative backbone for each boot. */
     if (xTaskCreate(ethernet_task, "dongle_eth", 4096, NULL, 4, &s_eth_task) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
-    if (wait_for(ETH_READY, CONFIG_ESP_BR_DONGLE_M_ETHERNET_WAIT_MS)) {
+    if (wait_for_ethernet()) {
         *backbone = netif_for_ifkey("ETH_DEF");
         if (*backbone) {
             /* ESP-IDF v5.5 replaced the EMAC's pass-all-multicast default with per-group MAC filters but does not
@@ -351,13 +560,21 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         state_set_selected(DONGLE_M_INFRA_ETHERNET);
         dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_ETHERNET);
         ESP_LOGI(TAG, "Selected Ethernet backbone");
+#if CONFIG_ESP_BR_DONGLE_M_WEB_GATE
+        ESP_RETURN_ON_ERROR(dongle_m_web_gate_select_backbone(*backbone), TAG, "Web startup gate selection failed");
+#endif
         return *backbone ? ESP_OK : ESP_FAIL;
     }
 
     if (!stored_wifi_credentials(ssid, password)) {
         state_set_selected(DONGLE_M_INFRA_PROVISIONING);
         ESP_LOGI(TAG, "No saved Wi-Fi credentials; opening provisioning SoftAP");
-        if (!provision_first_time_wifi(ssid, password)) {
+        provision = provision_first_time_wifi(ssid, password);
+        if (provision == PROVISION_ETHERNET) {
+            remember_slow_dhcp();
+            request_reboot("Ethernet ready during provisioning; rebooting to select Ethernet");
+        }
+        if (provision != PROVISION_WIFI) {
             ESP_LOGW(TAG, "Unable to start first-time provisioning; rebooting");
             vTaskDelay(pdMS_TO_TICKS(1000));
             esp_restart();
@@ -375,6 +592,9 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         state_set_selected(DONGLE_M_INFRA_WIFI);
         dongle_m_led_set_interface(DONGLE_M_LED_INTERFACE_WIFI);
         ESP_LOGI(TAG, "Selected Wi-Fi backbone");
+#if CONFIG_ESP_BR_DONGLE_M_WEB_GATE
+        ESP_RETURN_ON_ERROR(dongle_m_web_gate_select_backbone(*backbone), TAG, "Web startup gate selection failed");
+#endif
         return *backbone ? ESP_OK : ESP_FAIL;
     }
 
@@ -388,11 +608,15 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
         state_set_selected(DONGLE_M_INFRA_PROVISIONING);
         memset(ssid, 0, sizeof(ssid));
         memset(password, 0, sizeof(password));
-        if (provision_recovery_wifi(ssid, password)) {
+        /* If Ethernet ends provisioning, the reboot below lets the next boot select it. */
+        provision = provision_recovery_wifi(ssid, password);
+        if (provision == PROVISION_WIFI) {
             esp_ot_wifi_config_set_ssid(ssid);
             esp_ot_wifi_config_set_password(password);
             remember_ssid(ssid);
             fail_count_reset();
+        } else if (provision == PROVISION_ETHERNET) {
+            remember_slow_dhcp();
         }
     }
 

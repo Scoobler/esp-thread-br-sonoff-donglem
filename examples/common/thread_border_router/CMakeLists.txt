@@ -12,3 +12,7 @@ idf_component_register(SRC_DIRS "src"
 if(CONFIG_OPENTHREAD_BR_SOFTAP_SETUP)
     idf_component_optional_requires(PRIVATE esp_ot_br_server)
 endif()
+
+if(CONFIG_ESP_BR_DONGLE_M_WEB_GATE)
+    idf_component_optional_requires(PRIVATE esp_ot_br_server spiffs)
+endif()
