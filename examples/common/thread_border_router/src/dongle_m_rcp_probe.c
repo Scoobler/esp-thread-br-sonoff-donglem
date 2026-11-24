@@ -36,6 +36,8 @@
 #define DONGLE_M_MAX_SPINEL_FRAME_SIZE 128
 #define DONGLE_M_RESPONSE_TIMEOUT_MS 500
 #define DONGLE_M_RETRIES_PER_REQUEST 2
+#define DONGLE_M_DETECTION_CYCLES 2
+#define DONGLE_M_SLOW_STARTUP_DELAY_MS 2000
 
 static const char *TAG = "dongle_m_rcp_probe";
 
@@ -287,16 +289,27 @@ esp_err_t dongle_m_rcp_probe(uint32_t *baud_rate)
     if (baud_rate == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    for (size_t index = 0; index < sizeof(candidate_bauds) / sizeof(candidate_bauds[0]); index++) {
-        memset(ncp_version, 0, sizeof(ncp_version));
-        ESP_LOGI(TAG, "Probing MG24 Spinel at %" PRIu32 " baud", candidate_bauds[index]);
-        if (probe_at_baud(candidate_bauds[index], ncp_version, sizeof(ncp_version))) {
-            *baud_rate = candidate_bauds[index];
-            ESP_LOGI(TAG, "MG24 Spinel verified at %" PRIu32 " baud (NCP: %s)", *baud_rate, ncp_version);
-            return ESP_OK;
+    for (unsigned int cycle = 0; cycle < DONGLE_M_DETECTION_CYCLES; cycle++) {
+        for (size_t index = 0; index < sizeof(candidate_bauds) / sizeof(candidate_bauds[0]); index++) {
+            memset(ncp_version, 0, sizeof(ncp_version));
+            ESP_LOGI(TAG, "MG24 detection cycle %u/%u: probing Spinel at %" PRIu32 " baud", cycle + 1,
+                     DONGLE_M_DETECTION_CYCLES, candidate_bauds[index]);
+            if (probe_at_baud(candidate_bauds[index], ncp_version, sizeof(ncp_version))) {
+                *baud_rate = candidate_bauds[index];
+                ESP_LOGI(TAG, "MG24 Spinel verified at %" PRIu32 " baud (NCP: %s)", *baud_rate, ncp_version);
+                return ESP_OK;
+            }
+            ESP_LOGW(TAG, "MG24 detection cycle %u/%u: no valid Spinel response at %" PRIu32 " baud", cycle + 1,
+                     DONGLE_M_DETECTION_CYCLES, candidate_bauds[index]);
+        }
+        if (cycle + 1 < DONGLE_M_DETECTION_CYCLES) {
+            ESP_LOGW(TAG, "No compatible MG24 response; waiting %u ms for slow RCP startup before retrying",
+                     DONGLE_M_SLOW_STARTUP_DELAY_MS);
+            vTaskDelay(pdMS_TO_TICKS(DONGLE_M_SLOW_STARTUP_DELAY_MS));
         }
     }
-    ESP_LOGE(TAG, "No compatible MG24 Spinel RCP responded at 115200 or 460800 baud");
+    ESP_LOGE(TAG, "No compatible MG24 Spinel RCP responded at 115200 or 460800 baud after %u detection cycles",
+             DONGLE_M_DETECTION_CYCLES);
     return ESP_ERR_NOT_FOUND;
 }
 

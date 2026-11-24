@@ -30,6 +30,7 @@
 #include "freertos/task.h"
 
 #include "border_router_launch.h"
+#include "dongle_m_led.h"
 #include "dongle_m_rcp_probe.h"
 #include "esp_br_board.h"
 #include "esp_br_web.h"
@@ -118,6 +119,7 @@ void app_main(void)
     esp_err_t probe_error = dongle_m_rcp_probe(&detected_baud_rate);
     if (probe_error != ESP_OK) {
         ESP_LOGE(TAG, "OpenThread will not start until a compatible MG24 RCP is connected");
+        dongle_m_led_start_rcp_fault();
         vTaskDelay(portMAX_DELAY);
         return;
     }

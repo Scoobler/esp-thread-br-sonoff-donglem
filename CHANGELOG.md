@@ -13,12 +13,15 @@ and this project uses [Semantic Versioning](https://semver.org/).
   baud (Sonoff RCP v2.4.4) and then 460800 baud (v2.4.5), allowing one ESP32
   image to use either version. The probe validates HDLC FCS, Spinel response
   transaction/property/protocol compatibility and the non-empty NCP version
-  before OpenThread starts. It never resets, configures or flashes the MG24.
+  before OpenThread starts. It allows one delayed retry for slow RCP startup,
+  but never resets, configures or flashes the MG24.
 
 ### Changed
 
 - A missing or incompatible MG24 now produces a clear diagnostic and leaves
-  OpenThread stopped, rather than entering a reboot loop.
+  OpenThread stopped, rather than entering a reboot loop. After both bounded
+  detection cycles fail, the Dongle-M RGB LED flashes pure red at 500 ms on /
+  500 ms off until power-off or reset.
 
 ## [2.1.0] - 2026-11-24
 
