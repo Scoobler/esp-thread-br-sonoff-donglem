@@ -200,7 +200,10 @@ The recovery-attempt count persists in NVS. The 30-minute cooldown timer is RAM-
 
 The Thread dataset, Wi-Fi configuration and MG24 firmware are not deliberately altered by these recovery reboots.
 
-This approach has been hardware validated in both directions. The recovery backoff has not yet been exercised on hardware.
+This approach has been hardware validated in both directions. The three-attempt
+recovery backoff, full 30-minute cooldown and cooldown expiry have also been
+exercised on hardware. Remembering a slow DHCP network in NVS and using the
+subsequent 30-second startup wait remain untested.
 
 ---
 
@@ -275,6 +278,16 @@ The test covered:
 9. successful restart using Ethernet.
 
 The metadata-driven merged-image path is therefore considered **hardware validated**.
+
+### v2.0.2 validation record
+
+The v2.0.2 candidate was validated on Ethernet and Wi-Fi Dongle-M units from
+source `178975dbf68cbf16631f3f942d6ebdec5f94dd8a`, built with ESP-IDF v5.5.4.
+Tests 1–5, 7 and 8 passed, including the full 30-minute Ethernet-recovery
+cooldown and its expiry. Remembered slow-DHCP/NVS behaviour was not tested.
+
+The tested firmware checksums were local `020bd736…` and CI `c0e96a58…`.
+They identify the tested images only; no binary-reproducibility claim is made.
 
 ---
 
