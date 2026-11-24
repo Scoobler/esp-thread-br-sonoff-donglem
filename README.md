@@ -27,11 +27,11 @@ This project provides a practical, self-contained OTBR solution with:
 
 ## Download
 
-### Latest release — v2.0.1
+### Latest release — v2.0.2
 
-**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin)**
+**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.2/sonoff-dongle-m-otbr-v2.0.2.bin)**
 
-**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin.sha256)**
+**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.2/sonoff-dongle-m-otbr-v2.0.2.bin.sha256)**
 
 The `.bin` above is the **merged ESP32 firmware image** intended for flashing directly onto a Sonoff Dongle-M.
 
@@ -88,6 +88,9 @@ Before flashing this firmware, the Dongle-M should first be configured using the
    **Thread RCP Mode**
 
 This configures the onboard EFR32MG24 with the Thread RCP firmware expected by this project.
+
+> [!IMPORTANT]
+> **RCP compatibility for ESP32 OTBR v2.0.2:** Use **Sonoff OpenThread RCP v2.4.4 (115200 baud)** on the EFR32MG24. The newer **Sonoff RCP v2.4.5 at 460800 baud** is **not compatible** with the fixed 115200-baud MG24 UART setting in OTBR v2.0.2. If your Dongle-M has v2.4.5, install the compatible v2.4.4 MG24 RCP using the [official Sonoff Dongle Flasher](https://dongle.sonoff.tech/sonoff-dongle-flasher/) before flashing the ESP32 host firmware. See [issue #15](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/15).
 
 > The current release updates the **ESP32 host firmware only**.
 >
@@ -171,7 +174,7 @@ This is the recommended method for most users.
 
 1. Download the latest merged firmware:
 
-   **[sonoff-dongle-m-otbr-v2.0.1.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.1/sonoff-dongle-m-otbr-v2.0.1.bin)**
+   **[sonoff-dongle-m-otbr-v2.0.2.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.0.2/sonoff-dongle-m-otbr-v2.0.2.bin)**
 
 2. Plug the Dongle-M into your computer using USB.
 
@@ -190,7 +193,7 @@ This is the recommended method for most users.
 7. Upload:
 
    ```text
-   sonoff-dongle-m-otbr-v2.0.1.bin
+   sonoff-dongle-m-otbr-v2.0.2.bin
    ```
 
 8. Start the flash.
@@ -207,12 +210,14 @@ The Dongle-M will reboot automatically when flashing completes.
 
 The release image is a merged ESP32 image and should be written at address `0x0`.
 
+The `--baud 460800` setting in the commands below is the **ESP32 USB flashing speed**, not the UART speed between the ESP32 and the MG24 RCP (which is fixed at **115200** in OTBR v2.0.2).
+
 ### Windows PowerShell
 
 ```powershell
 py -m esptool --chip esp32 --port COM3 --baud 460800 `
   --before default_reset --after hard_reset `
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.1.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.2.bin
 ```
 
 Replace `COM3` with the serial port used by your Dongle-M.
@@ -222,7 +227,7 @@ Replace `COM3` with the serial port used by your Dongle-M.
 ```bash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
   --before default_reset --after hard_reset \
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.1.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.0.2.bin
 ```
 
 Replace `/dev/ttyUSB0` with the correct serial device.
@@ -551,14 +556,14 @@ Tagged releases use the tag name in the output filename.
 For example:
 
 ```text
-v2.0.1
+v2.0.2
 ```
 
 produces:
 
 ```text
-sonoff-dongle-m-otbr-v2.0.1.bin
-sonoff-dongle-m-otbr-v2.0.1.bin.sha256
+sonoff-dongle-m-otbr-v2.0.2.bin
+sonoff-dongle-m-otbr-v2.0.2.bin.sha256
 ```
 
 The same files are attached automatically to the corresponding GitHub Release.
@@ -581,7 +586,7 @@ The merged image provided by this project is a raw ESP32 flash image and is **no
 
 # MG24 RCP
 
-The currently supported RCP is the stock Sonoff EFR32MG24 OpenThread RCP.
+The supported MG24 radio firmware for ESP32 OTBR v2.0.2 is **Sonoff OpenThread RCP v2.4.4 at 115200 baud** (see [issue #15](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/15)). The newer Sonoff v2.4.5 RCP image configured for 460800 baud is not supported by this release.
 
 The ESP32 host communicates with it using Spinel over UART.
 
@@ -589,9 +594,9 @@ A future improvement may be to provide a fully reproducible host + RCP release p
 
 For now, the safe and validated approach is:
 
-1. use the stock Sonoff firmware to place the MG24 into Thread RCP Mode;
+1. use the stock Sonoff firmware to place the MG24 into Thread RCP Mode and ensure **RCP v2.4.4 (115200 baud)** is installed (downgrade from v2.4.5 if necessary);
 2. flash the custom ESP32 OTBR firmware;
-3. leave the MG24 RCP firmware unchanged.
+3. leave the compatible MG24 RCP firmware unchanged during future ESP32-only upgrades.
 
 ---
 
