@@ -5,6 +5,31 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - Unreleased
+
+### Changed
+
+- Prepared a Sonoff Dongle-M candidate incorporating 13 Espressif upstream
+  commits from `29a2345e3f0c61bba9307f3daea5ed0c94388ed3` through
+  `847d04f9211d37f082d660fa1f54944d496fca16`. The update aligns the Border
+  Router REST API with ot-br-posix 0.6.0, refreshes the upstream Web UI,
+  fixes REST-initialization deadlock and UI display issues, and updates the
+  recommended ESP-IDF version to v5.5.6.
+- The upstream basic-example 4 MB configuration and default Web GUI enablement
+  are incorporated without changing the separate Dongle-M 16 MB board profile,
+  Ethernet/Wi-Fi recovery behaviour, MG24 RCP configuration, LEDs, dataset
+  handling, or release-image tooling.
+- Excluded upstream GitHub Actions completely, including `pages.yml`; the two
+  approved Sonoff workflows remain byte-for-byte identical to `origin/main`.
+
+### Validation
+
+- Candidate firmware source: `8be7a30418d5e0efd556f68547d4e427cfa68b91`;
+  ESP-IDF v5.5.6; merged image SHA-256:
+  `8607e238b04af9f7faac0c9fd42d99463fe738e4adc1329945efb003a65ab091`.
+- The candidate builds successfully but is not hardware validated. It must not
+  be released or promoted until an explicit `HARDWARE PASS` is recorded.
+
 ## [2.0.2] - 2026-11-24
 
 ### Added

@@ -96,13 +96,13 @@ indiscriminately delete other upstream configuration files.
 The v2 codebase currently contains Espressif upstream through:
 
 ```text
-29a2345e3f0c61bba9307f3daea5ed0c94388ed3
+847d04f9211d37f082d660fa1f54944d496fca16
 ```
 
 At the time this baseline was recorded:
 
 ```text
-upstream/main = 29a2345e3f0c61bba9307f3daea5ed0c94388ed3
+upstream/main = 847d04f9211d37f082d660fa1f54944d496fca16
 ```
 
 This value is a maintenance reference, not a permanent pin.
