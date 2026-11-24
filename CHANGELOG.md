@@ -5,6 +5,21 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Sonoff Dongle-M startup now read-only probes the MG24 Spinel RCP at 115200
+  baud (Sonoff RCP v2.4.4) and then 460800 baud (v2.4.5), allowing one ESP32
+  image to use either version. The probe validates HDLC FCS, Spinel response
+  transaction/property/protocol compatibility and the non-empty NCP version
+  before OpenThread starts. It never resets, configures or flashes the MG24.
+
+### Changed
+
+- A missing or incompatible MG24 now produces a clear diagnostic and leaves
+  OpenThread stopped, rather than entering a reboot loop.
+
 ## [2.1.0] - 2026-11-24
 
 ### Changed

@@ -26,8 +26,10 @@
 #include "nvs_flash.h"
 #include "driver/uart.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "border_router_launch.h"
+#include "dongle_m_rcp_probe.h"
 #include "esp_br_board.h"
 #include "esp_br_web.h"
 
@@ -35,6 +37,9 @@
 
 extern const uint8_t server_cert_pem_start[] asm("_binary_ca_cert_pem_start");
 extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
+
+/* ESP-IDF retains pointers into this object after esp_openthread_start(). */
+static esp_openthread_config_t s_openthread_config;
 
 static esp_err_t init_spiffs(void)
 {
@@ -75,7 +80,7 @@ void app_main(void)
         .max_fds = max_eventfd,
     };
 
-    esp_openthread_config_t openthread_config = {
+    s_openthread_config = (esp_openthread_config_t){
         .netif_config = ESP_NETIF_DEFAULT_OPENTHREAD(),
         .platform_config =
             {
@@ -107,5 +112,15 @@ void app_main(void)
     esp_br_web_start("/spiffs");
 #endif
 
-    launch_openthread_border_router(&openthread_config, &rcp_update_config);
+#if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
+    esp_err_t probe_error =
+        dongle_m_rcp_probe(&s_openthread_config.platform_config.radio_config.radio_uart_config.uart_config.baud_rate);
+    if (probe_error != ESP_OK) {
+        ESP_LOGE(TAG, "OpenThread will not start until a compatible MG24 RCP is connected");
+        vTaskDelay(portMAX_DELAY);
+        return;
+    }
+#endif
+
+    launch_openthread_border_router(&s_openthread_config, &rcp_update_config);
 }
