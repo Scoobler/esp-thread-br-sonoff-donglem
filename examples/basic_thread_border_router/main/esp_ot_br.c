@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "sdkconfig.h"
@@ -113,13 +114,14 @@ void app_main(void)
 #endif
 
 #if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
-    esp_err_t probe_error =
-        dongle_m_rcp_probe(&s_openthread_config.platform_config.radio_config.radio_uart_config.uart_config.baud_rate);
+    uint32_t detected_baud_rate;
+    esp_err_t probe_error = dongle_m_rcp_probe(&detected_baud_rate);
     if (probe_error != ESP_OK) {
         ESP_LOGE(TAG, "OpenThread will not start until a compatible MG24 RCP is connected");
         vTaskDelay(portMAX_DELAY);
         return;
     }
+    s_openthread_config.platform_config.radio_config.radio_uart_config.uart_config.baud_rate = detected_baud_rate;
 #endif
 
     launch_openthread_border_router(&s_openthread_config, &rcp_update_config);
