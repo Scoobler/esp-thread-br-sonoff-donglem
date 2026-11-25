@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101a2a">
+  <title>Sonoff Dongle-M · Firmware Flasher</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#0c1422;color:#f4f7ff}
+    *{box-sizing:border-box}body{margin:0;line-height:1.5}main{width:min(800px,calc(100% - 32px));margin:48px auto 70px}
+    h1{font-size:clamp(1.7rem,5vw,2.5rem);letter-spacing:-.035em;margin:0 0 8px}h2{font-size:1.15rem;margin:0 0 12px}
+    p{color:#b6c4d8}.eyebrow{color:#75c8ed;font-size:.78rem;text-transform:uppercase;letter-spacing:.13em;font-weight:700}
+    .sub{margin-top:0}.panel{background:#162236;border:1px solid #32425b;border-radius:16px;padding:24px;margin:20px 0}
+    label{display:block;font-weight:650;margin:14px 0 8px}.choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .choice{border:1px solid #445671;border-radius:12px;padding:16px;cursor:pointer;margin:0;background:#1a2a40}
+    .choice:has(input:checked){border:2px solid #63c0f6;padding:15px;background:#173551}
+    .choice strong{display:block;font-size:1.02rem}.choice small{display:block;color:#b7c7d8;font-weight:400;margin-top:6px}
+    .choice input{accent-color:#63c0f6;margin-right:6px}
+    select,input[type=file]{width:100%;padding:11px;color:inherit;background:#0f1c2d;border:1px solid #4b607c;border-radius:9px}
+    button{padding:13px 19px;border:0;border-radius:10px;background:#5dc0ee;color:#082136;font-weight:750;cursor:pointer}
+    button:disabled{opacity:.42;cursor:not-allowed}.hint{font-size:.9rem;color:#a9bfd6}
+    .warning{border-left:3px solid #e8ac5a;background:#342819;padding:12px 15px;border-radius:6px;color:#ffe8c8}
+    .success{color:#9be6bd}a{color:#8bd8ff}progress{width:100%;height:14px;accent-color:#66c7ef}
+    pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#08111f;color:#c9e7f9;border-radius:10px;padding:14px;max-height:260px;overflow:auto;font-size:.78rem}
+    footer{font-size:.85rem;color:#93a8c0;margin-top:30px}@media(max-width:550px){.choices{grid-template-columns:1fr}.panel{padding:17px}main{margin-top:24px}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Scoobler · OpenThread Border Router</div>
+  <h1>Sonoff Dongle-M firmware flasher</h1>
+  <p class="sub">Flash your ESP32 host firmware directly over USB-C. No software to install; use desktop Chrome or Edge.</p>
+  <section class="panel">
+    <h2>1 · Choose what to do</h2>
+    <div class="choices">
+      <label class="choice"><input type="radio" name="mode" value="fresh" checked>
+        <strong>Fresh installation</strong>
+        <small>Erase all ESP32 flash and install the complete image. Wi-Fi credentials and Thread dataset will be lost.</small>
+      </label>
+      <label class="choice"><input type="radio" name="mode" value="upgrade">
+        <strong>Upgrade</strong>
+        <small>Keep ESP32 NVS, Wi-Fi credentials and Thread dataset. Update application and Web UI only.</small>
+      </label>
+    </div>
+    <p class="warning" id="mode-warning">Fresh installation erases <strong>all ESP32 flash</strong>. Back up your Thread Active Dataset and prepare to configure Wi-Fi again. The MG24 RCP is separate and is not flashed.</p>
+  </section>
+  <section class="panel">
+    <h2>2 · Select firmware</h2>
+    <label for="source">Firmware source</label>
+    <select id="source"><option value="latest">Latest published release</option><option value="custom">Custom .bin file (advanced)</option></select>
+    <div id="latest-details"><p id="release">Loading published release details…</p><p class="hint">The firmware is served from this GitHub Pages site. Release files are verified against published SHA-256 checksums before flashing.</p></div>
+    <div id="custom-details" hidden>
+      <label for="custom-file">Choose a binary for the selected operation</label>
+      <input id="custom-file" type="file" accept=".bin,application/octet-stream">
+      <p class="warning">Custom files are not signature-verified. Only use a trusted <strong>merged image at 0x0</strong> for Fresh installation or a <strong>Dongle-M upgrade image at 0x20000</strong> for Upgrade. Wrong images or offsets can make the ESP32 unbootable.</p>
+    </div>
+  </section>
+  <section class="panel">
+    <h2>3 · Flash over USB-C</h2>
+    <p>Close MobaXterm, serial monitors and Sonoff Dongle Flasher before proceeding. The MG24 must already be running a compatible Sonoff <strong>OpenThread RCP</strong>.</p>
+    <label id="confirmation-label"><input id="confirm" type="checkbox"> I have backed up my Thread dataset and understand this operation erases my ESP32 settings.</label>
+    <p><button id="flash" disabled>Connect and flash</button></p>
+    <label for="progress">Progress</label><progress id="progress" value="0" max="100"></progress>
+    <p role="status" id="status">Preparing…</p>
+    <details><summary>Flasher log</summary><pre id="log" aria-live="polite"></pre></details>
+  </section>
+  <footer>Project: <a href="https://github.com/Scoobler/esp-thread-br-sonoff-donglem">Scoobler/esp-thread-br-sonoff-donglem</a>. This tool flashes the ESP32 host only. USB serial access requires HTTPS and a compatible Chromium browser.</footer>
+</main>
+<script type="module" src="./flasher.js"></script>
+</body>
+</html>
