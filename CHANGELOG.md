@@ -7,6 +7,15 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- GitHub Pages deployment now uploads its website artifact in a separate job
+  before invoking `deploy-pages`, avoiding an artifact-discovery race observed
+  during the v2.3.0 tag deployment. A manual workflow-dispatch option can
+  redeploy the exact existing published release files without rebuilding or
+  moving an already-published version tag.
+
+
 ## [2.3.0] - 2026-11-25
 
 ### Added

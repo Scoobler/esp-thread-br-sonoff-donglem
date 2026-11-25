@@ -2,6 +2,11 @@ name: Build Sonoff Dongle-M OTBR
 
 on:
   workflow_dispatch:
+    inputs:
+      pages_release_tag:
+        description: 'Optional published tag (e.g. v2.3.0) to redeploy its existing firmware to GitHub Pages'
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -18,6 +23,7 @@ permissions:
 jobs:
   build:
     name: Build Dongle-M firmware
+    if: github.event_name != 'workflow_dispatch' || inputs.pages_release_tag == ''
     runs-on: ubuntu-latest
 
     container:
@@ -172,32 +178,52 @@ jobs:
             artifacts/*.sha256
           fail_on_unmatched_files: true
 
-  pages:
-    name: Publish browser flasher to GitHub Pages
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+  pages_prepare:
+    name: Prepare published firmware website
+    # 'always' allows manual deployment even though build/release are skipped.
+    if: >-
+      always() &&
+      ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.release.result == 'success') ||
+       (github.event_name == 'workflow_dispatch' && inputs.pages_release_tag != ''))
     needs: [build, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Check out flasher site
+      - name: Check out flasher site from the release tag
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.pages_release_tag || github.ref_name }}
 
-      - name: Download release firmware from this workflow
+      - name: Download firmware from this tagged build
+        if: github.event_name == 'push'
         uses: actions/download-artifact@v4
         with:
           name: sonoff-dongle-m-firmware
           path: artifacts
 
+      - name: Download firmware from an existing published release
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.pages_release_tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a published semantic-version tag such as v2.3.0"
+            exit 1
+          fi
+          mkdir -p artifacts
+          gh release download "${RELEASE_TAG}" \
+            --pattern "sonoff-dongle-m-otbr-${RELEASE_TAG}*.bin*" \
+            --dir artifacts
+
+
       - name: Assemble GitHub Pages release site
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.pages_release_tag || github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -234,6 +260,20 @@ jobs:
         with:
           path: dist
 
+  pages:
+    name: Publish browser flasher to GitHub Pages
+    needs: pages_prepare
+    if: needs.pages_prepare.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # A separate job avoids the artifact discovery race when upload and
+      # deploy run back-to-back in the same job (actions/deploy-pages#451).
       - name: Publish GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
