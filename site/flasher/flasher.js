@@ -133,7 +133,9 @@ async function flash() {
     });
     status("Firmware written and verified. Restarting ESP32…");
     await loader.after("hard_reset");
-    status("Flash complete. The Dongle-M may take a short while to rejoin the network.");
+    status(mode.destructive
+      ? "Fresh installation complete. ESP32 settings were erased. Configure Wi-Fi if needed, then set up or restore your Thread dataset using the README instructions."
+      : "Upgrade complete. The Dongle-M should restart and reconnect using its retained Wi-Fi and Thread settings.");
   } catch (error) {
     status(`Error: ${error.message || error}`);
   } finally {
