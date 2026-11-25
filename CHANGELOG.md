@@ -5,6 +5,41 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [2.2.0] - 2026-11-25
+
+### Added
+
+- Sonoff Dongle-M startup now read-only probes the MG24 Spinel RCP at 115200
+  baud (Sonoff RCP v2.4.4) and then 460800 baud (v2.4.5), allowing one ESP32
+  image to use either version. The probe validates HDLC FCS, Spinel response
+  transaction/property/protocol compatibility and the non-empty NCP version
+  before OpenThread starts. It allows one delayed retry for slow RCP startup,
+  but never resets, configures or flashes the MG24.
+
+### Changed
+
+- A missing or incompatible MG24 now produces a clear diagnostic and leaves
+  OpenThread stopped, rather than entering a reboot loop. After both bounded
+  detection cycles fail, the Dongle-M RGB LED flashes pure red at 500 ms on /
+  500 ms off until power-off or reset.
+
+### Validation
+
+- **HARDWARE PASS** reported on 2026-11-25, using the ESP-IDF v5.5.6
+  firmware from source `36ccfc50feda1ffb12ec41cd707825c8e3b3e1bb`,
+  [CI run #48](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/actions/runs/45499255468),
+  merged image SHA-256 `c03eb7b879704f0bd1f82fa01028576cfaf8753a75f8f7744295bbf4ee5b33f3`.
+- Hardware checked: both 115200/460800 Spinel detection, recovery from
+  re-flashing MG24, incompatible Zigbee firmware rejection, bounded retry
+  and flashing-red fault LED, overnight Thread operation, and Ethernet
+  failover/failback. Documentation changes after the tested commit do not
+  modify firmware source.
+- One 460800-baud RCP radio TX timeout at about 11 h 47 min was recovered
+  by OpenThread on the first recovery attempt, with no observed impact;
+  cause undetermined. Monitor recurrence separately.
+
 ## [2.1.0] - 2026-11-24
 
 ### Changed

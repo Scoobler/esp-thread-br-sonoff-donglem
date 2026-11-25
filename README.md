@@ -14,7 +14,8 @@ This project provides a practical, self-contained OTBR solution with:
 - Persistent Thread network state
 - Home Assistant integration
 - Multiple Border Router support
-- RGB status indication
+- RGB status indication, including a flashing-red RCP fault alarm
+- Automatic compatibility with Sonoff OpenThread RCP at 115200 or 460800 baud
 - Reproducible GitHub Actions release builds
 
 > **Community project**
@@ -27,11 +28,11 @@ This project provides a practical, self-contained OTBR solution with:
 
 ## Download
 
-### Latest release — v2.1.0
+### v2.2.0 release firmware
 
-**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.1.0/sonoff-dongle-m-otbr-v2.1.0.bin)**
+**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.2.0/sonoff-dongle-m-otbr-v2.2.0.bin)**
 
-**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.1.0/sonoff-dongle-m-otbr-v2.1.0.bin.sha256)**
+**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.2.0/sonoff-dongle-m-otbr-v2.2.0.bin.sha256)**
 
 The `.bin` above is the **merged ESP32 firmware image** intended for flashing directly onto a Sonoff Dongle-M.
 
@@ -64,7 +65,7 @@ The firmware is based on Espressif’s current `esp-thread-br` architecture rath
 
 ## Prerequisites
 
-Before flashing this firmware, the Dongle-M should first be configured using the stock Sonoff firmware so that the onboard EFR32MG24 is placed into **Thread RCP Mode**.
+**First install and run the official Sonoff Dongle-M firmware.** Use its Web UI to configure the onboard EFR32MG24 in **Thread RCP Mode** before replacing the ESP32 firmware with this project. Do not leave the MG24 in Zigbee coordinator mode: Zigbee is not compatible with OpenThread Spinel.
 
 ### Step 1 — Initial Sonoff setup
 
@@ -87,14 +88,18 @@ Before flashing this firmware, the Dongle-M should first be configured using the
 
    **Thread RCP Mode**
 
-This configures the onboard EFR32MG24 with the Thread RCP firmware expected by this project.
+This prepares the onboard EFR32MG24 with the OpenThread RCP firmware expected by this project. If the MG24 is currently running Zigbee firmware, switch it to **Thread RCP Mode using Sonoff's normal procedure** before flashing the custom ESP32 host image.
 
 > [!IMPORTANT]
-> **RCP compatibility for ESP32 OTBR v2.1.0:** Use **Sonoff OpenThread RCP v2.4.4 (115200 baud)** on the EFR32MG24. The newer **Sonoff RCP v2.4.5 at 460800 baud** is **not compatible** with the fixed 115200-baud MG24 UART setting in OTBR v2.1.0. If your Dongle-M has v2.4.5, install the compatible v2.4.4 MG24 RCP using the [official Sonoff Dongle Flasher](https://dongle.sonoff.tech/sonoff-dongle-flasher/) before flashing the ESP32 host firmware. See [issue #15](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/15).
-
-> The current release updates the **ESP32 host firmware only**.
+> **RCP compatibility (v2.2.0):** One ESP32 image supports Sonoff OpenThread
+> RCP **v2.4.4 at 115200 baud** and **v2.4.5 at 460800 baud**. On every boot,
+> the ESP32 probes and validates the RCP's Spinel protocol automatically;
+> **no manual UART baud selection is needed**. The probe is read-only and does
+> not reset, configure or flash the MG24. See [issue #15](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/15).
 >
-> It does not automatically flash or replace the MG24 firmware.
+> The release image updates the **ESP32 host only**. It does not include,
+> automatically install, or replace MG24 firmware. Configure a compatible
+> **Thread RCP** using the standard Sonoff firmware **before** flashing this image.
 
 > [!WARNING]
 > If you are upgrading an existing Dongle-M installation, [back up your Active Operational Dataset first](#dataset-backup--upgrade-notes). This applies to every firmware update, including v1 to v2 and later v2 releases. First-time installations do not have an existing dataset to back up.
@@ -160,6 +165,18 @@ Confirm that the Dongle-M has rejoined the original Thread network. Check Thread
 
 </details>
 
+### Updating the MG24 OpenThread RCP firmware
+
+If you want to update the MG24 RCP, **back up your Thread dataset first** using the steps above.
+
+1. Connect the Dongle-M to your PC via USB-C, open the [Sonoff Dongle Flasher](https://dongle.sonoff.tech/sonoff-dongle-flasher/), select the device and flash the **latest official Sonoff firmware**.
+2. Join the Sonoff setup Wi-Fi AP, set a password, then reconnect to the AP using that password and open the Sonoff Web UI.
+3. In the Web UI, choose **Firmware → MG24 → OpenThread** and flash the latest **compatible Thread RCP** firmware.
+4. Return to the Sonoff Dongle Flasher and flash the [latest ESP32 firmware from this repository](#download).
+5. Reconnect the Dongle-M and [restore your Thread dataset](#dataset-backup--upgrade-notes) if required.
+
+The ESP32 automatically detects the RCP at **115200 or 460800 baud**; no manual baud setting is needed. The custom ESP32 image does **not** update the MG24 itself.
+
 ---
 
 # Flashing the firmware
@@ -174,7 +191,7 @@ This is the recommended method for most users.
 
 1. Download the latest merged firmware:
 
-   **[sonoff-dongle-m-otbr-v2.1.0.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.1.0/sonoff-dongle-m-otbr-v2.1.0.bin)**
+   **[sonoff-dongle-m-otbr-v2.2.0.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.2.0/sonoff-dongle-m-otbr-v2.2.0.bin)**
 
 2. Plug the Dongle-M into your computer using USB.
 
@@ -193,7 +210,7 @@ This is the recommended method for most users.
 7. Upload:
 
    ```text
-   sonoff-dongle-m-otbr-v2.1.0.bin
+   sonoff-dongle-m-otbr-v2.2.0.bin
    ```
 
 8. Start the flash.
@@ -210,14 +227,14 @@ The Dongle-M will reboot automatically when flashing completes.
 
 The release image is a merged ESP32 image and should be written at address `0x0`.
 
-The `--baud 460800` setting in the commands below is the **ESP32 USB flashing speed**, not the UART speed between the ESP32 and the MG24 RCP (which is fixed at **115200** in OTBR v2.1.0).
+The `--baud 460800` setting in the commands below is the **ESP32 USB flashing speed**, not the UART speed between the ESP32 and the MG24 RCP (which the firmware detects automatically).
 
 ### Windows PowerShell
 
 ```powershell
 py -m esptool --chip esp32 --port COM3 --baud 460800 `
   --before default_reset --after hard_reset `
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.1.0.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.2.0.bin
 ```
 
 Replace `COM3` with the serial port used by your Dongle-M.
@@ -227,7 +244,7 @@ Replace `COM3` with the serial port used by your Dongle-M.
 ```bash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
   --before default_reset --after hard_reset \
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.1.0.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.2.0.bin
 ```
 
 Replace `/dev/ttyUSB0` with the correct serial device.
@@ -236,7 +253,23 @@ Replace `/dev/ttyUSB0` with the correct serial device.
 
 # First boot and network behaviour
 
-The firmware uses an Ethernet-first connection policy.
+## MG24 RCP detection
+
+Before selecting Ethernet or Wi-Fi, the ESP32 probes the MG24 for a compatible
+**OpenThread Spinel RCP** at **115200 baud**, then **460800 baud**. Only a valid
+protocol and version response is accepted; there is no unverified default
+baud-rate fallback.
+
+If both rates fail, the firmware waits **2 seconds** and repeats the bounded
+check once to accommodate a slow-starting MG24. If neither detection cycle
+succeeds, **OpenThread does not start** and the LED flashes **red continuously
+(500 ms on / 500 ms off)**. The device will not enter an automatic reboot loop.
+This can indicate Zigbee firmware, an absent RCP or an RCP that is not ready or
+responding. Restore a compatible Sonoff Thread RCP and restart the ESP32.
+
+## Ethernet-first backbone selection
+
+Once a compatible RCP has been detected, the firmware uses an Ethernet-first connection policy.
 
 On boot, it attempts connectivity in this order:
 
@@ -285,11 +318,13 @@ The onboard RGB LED is used to show the current operating state.
 
 ## Boot
 
-A short self-test is shown:
+A short self-test is shown after a compatible RCP is detected:
 
 ```text
 Red → Green → Blue
 ```
+
+If RCP detection fails, the normal self-test is skipped and the flashing-red fault indication takes priority.
 
 ## Infrastructure connection
 
@@ -307,6 +342,20 @@ Red → Green → Blue
 | Thread detached / disabled | Short red pulse approximately every 2 seconds |
 
 The detached indication is suppressed briefly after Thread startup to avoid showing a false failure while the network attaches.
+
+## RCP detection fault
+
+| State | LED |
+| --- | --- |
+| No compatible MG24 OpenThread RCP detected after two bounded probe cycles | **Continuous red flashing: 500 ms ON / 500 ms OFF** |
+
+The fault indication overrides all infrastructure and Thread status colours.
+It means the ESP32 could not verify a compatible Spinel RCP at either 115200
+or 460800 baud; **it is not the normal short red Thread-detached pulse**.
+This can occur with Zigbee firmware, an absent/incompatible MG24, or a slow or
+unresponsive RCP. OpenThread remains stopped without automatic reboot until
+an operator corrects the RCP and restarts the ESP32. Serial startup logs give
+the attempted rates and the detection result.
 
 ---
 
@@ -413,7 +462,7 @@ The validated Dongle-M hardware uses:
 | UART | UART1 |
 | RX | GPIO13 |
 | TX | GPIO17 |
-| Baud | 115200 |
+| Baud | Automatic: 115200 or 460800 |
 | Data bits | 8 |
 | Stop bits | 1 |
 | Parity | None |
@@ -556,14 +605,14 @@ Tagged releases use the tag name in the output filename.
 For example:
 
 ```text
-v2.1.0
+v2.2.0
 ```
 
 produces:
 
 ```text
-sonoff-dongle-m-otbr-v2.1.0.bin
-sonoff-dongle-m-otbr-v2.1.0.bin.sha256
+sonoff-dongle-m-otbr-v2.2.0.bin
+sonoff-dongle-m-otbr-v2.2.0.bin.sha256
 ```
 
 The same files are attached automatically to the corresponding GitHub Release.
@@ -586,17 +635,22 @@ The merged image provided by this project is a raw ESP32 flash image and is **no
 
 # MG24 RCP
 
-The supported MG24 radio firmware for ESP32 OTBR v2.1.0 is **Sonoff OpenThread RCP v2.4.4 at 115200 baud** (see [issue #15](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/15)). The newer Sonoff v2.4.5 RCP image configured for 460800 baud is not supported by this release.
+The firmware automatically supports **Sonoff OpenThread RCP v2.4.4 at 115200 baud** and
+**v2.4.5 at 460800 baud** (see [issue #15](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/15)).
 
-The ESP32 host communicates with it using Spinel over UART.
+The ESP32 host communicates using Spinel over UART and selects the verified
+rate during every boot. The NCP's internal version string is not itself a
+reliable indicator of the UART baud setting; the valid Spinel response at a
+particular baud rate determines the selection.
 
 A future improvement may be to provide a fully reproducible host + RCP release path so that both processors can be built and maintained from source as one project.
 
 For now, the safe and validated approach is:
 
-1. use the stock Sonoff firmware to place the MG24 into Thread RCP Mode and ensure **RCP v2.4.4 (115200 baud)** is installed (downgrade from v2.4.5 if necessary);
-2. flash the custom ESP32 OTBR firmware;
-3. leave the compatible MG24 RCP firmware unchanged during future ESP32-only upgrades.
+1. install or restore the official Sonoff Dongle-M ESP32 firmware;
+2. follow the official Sonoff Web UI procedure to select **Thread RCP Mode** and install a compatible MG24 RCP (v2.4.4 / 115200 or v2.4.5 / 460800), **not Zigbee coordinator firmware**;
+3. flash this project's merged **ESP32 host** firmware using the [Sonoff Dongle Flasher](#method-1--pre-built-firmware-using-sonoff-dongle-flasher) or `esptool`;
+4. leave the working MG24 RCP firmware unchanged during later ESP32-only upgrades.
 
 ---
 

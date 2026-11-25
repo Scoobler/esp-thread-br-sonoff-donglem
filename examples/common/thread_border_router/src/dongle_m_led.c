@@ -28,9 +28,13 @@ typedef struct { uint8_t red, green, blue; } rgb_t;
 #define LEDC_CH_RED     LEDC_CHANNEL_0
 #define LEDC_CH_GREEN   LEDC_CHANNEL_1
 #define LEDC_CH_BLUE    LEDC_CHANNEL_2
+#define DONGLE_M_RCP_FAULT_INTERVAL_MS 500
 
 static volatile dongle_m_led_interface_t s_interface = DONGLE_M_LED_INTERFACE_ETHERNET;
 static volatile bool s_thread_ready;
+static volatile bool s_rcp_fault;
+static bool s_ledc_initialized;
+static bool s_led_task_started;
 
 static rgb_t base_colour(void)
 {
@@ -72,6 +76,14 @@ static void led_task(void *arg)
     TickType_t ready_at = 0;
     bool previous_ready = false;
     for (;;) {
+        if (s_rcp_fault) {
+            set_rgb((rgb_t){255, 0, 0});
+            vTaskDelay(pdMS_TO_TICKS(DONGLE_M_RCP_FAULT_INTERVAL_MS));
+            set_rgb((rgb_t){0, 0, 0});
+            vTaskDelay(pdMS_TO_TICKS(DONGLE_M_RCP_FAULT_INTERVAL_MS));
+            continue;
+        }
+
         TickType_t now = xTaskGetTickCount();
         if (s_thread_ready && !previous_ready) {
             ready_at = now;
@@ -96,8 +108,12 @@ static void led_task(void *arg)
     }
 }
 
-void dongle_m_led_init(void)
+static void initialize_ledc(void)
 {
+    if (s_ledc_initialized) {
+        return;
+    }
+
     ledc_timer_config_t timer = {
         .speed_mode = LEDC_MODE,
         .duty_resolution = LEDC_TIMER_BITS,
@@ -123,12 +139,40 @@ void dongle_m_led_init(void)
     channel.gpio_num = CONFIG_ESP_BR_BOARD_LED_BLUE_GPIO;
     channel.channel = LEDC_CH_BLUE;
     ESP_ERROR_CHECK(ledc_channel_config(&channel));
+    s_ledc_initialized = true;
+}
+
+static void start_led_task(void)
+{
+    if (s_led_task_started) {
+        return;
+    }
+    ESP_ERROR_CHECK(xTaskCreate(led_task, "dongle_led", 3072, NULL, 3, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    s_led_task_started = true;
+}
+
+void dongle_m_led_init(void)
+{
+    if (s_rcp_fault) {
+        return;
+    }
+
+    initialize_ledc();
     set_rgb((rgb_t){255, 0, 0}); vTaskDelay(pdMS_TO_TICKS(250));
     set_rgb((rgb_t){0, 255, 0}); vTaskDelay(pdMS_TO_TICKS(250));
     set_rgb((rgb_t){0, 0, 255}); vTaskDelay(pdMS_TO_TICKS(250));
     set_rgb((rgb_t){0, 0, 0});
-    ESP_ERROR_CHECK(xTaskCreate(led_task, "dongle_led", 3072, NULL, 3, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    start_led_task();
     ESP_LOGI(TAG, "Dongle-M RGB status policy started");
+}
+
+void dongle_m_led_start_rcp_fault(void)
+{
+    s_rcp_fault = true;
+    initialize_ledc();
+    set_rgb((rgb_t){255, 0, 0});
+    start_led_task();
+    ESP_LOGE(TAG, "MG24 RCP fault indication started");
 }
 
 void dongle_m_led_set_interface(dongle_m_led_interface_t interface) { s_interface = interface; }
@@ -137,6 +181,7 @@ void dongle_m_led_set_thread_ready(bool ready) { s_thread_ready = ready; }
 #else
 
 void dongle_m_led_init(void) {}
+void dongle_m_led_start_rcp_fault(void) {}
 void dongle_m_led_set_interface(dongle_m_led_interface_t interface) { (void)interface; }
 void dongle_m_led_set_thread_ready(bool ready) { (void)ready; }
 
