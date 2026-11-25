@@ -106,7 +106,11 @@ async function flash() {
     const loader = new ESPLoader({ transport, baudrate: 115200, terminal, debugLogging: false });
     const chip = await loader.main();
     status(`Connected: ${chip}`);
-    if (!/ESP32/i.test(chip) || /S[0-9]|C[0-9]|H[0-9]|P[0-9]/i.test(chip)) {
+    // esptool-js may report the classic ESP32 as "Unknown ESP32 (revision 3)".
+    // Check variant suffixes only immediately after "ESP32": a broad /P[0-9]/
+    // would incorrectly reject the "P3" within the name "ESP32" itself.
+    const chipMatch = String(chip).match(/\bESP32(?:[-_]?([SCHP]\d+))?\b/i);
+    if (!chipMatch || chipMatch[1]) {
       throw Error(`Unsupported chip ${chip}. Dongle-M requires the original ESP32.`);
     }
     if (mode.destructive) {
