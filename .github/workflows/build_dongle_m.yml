@@ -21,6 +21,15 @@ permissions:
   contents: read
 
 jobs:
+  web_syntax:
+    name: Validate browser flasher JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Check JavaScript module syntax
+        run: node --check site/flasher/flasher.js
+
   build:
     name: Build Dongle-M firmware
     if: github.event_name != 'workflow_dispatch' || inputs.pages_release_tag == ''
@@ -190,10 +199,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check out flasher site from the release tag
+      - name: Check out flasher site
         uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.pages_release_tag || github.ref_name }}
+          # A manual redeployment must use the corrected website source from
+          # main while reusing the immutable firmware assets of the release.
+          ref: ${{ github.ref_name }}
 
       - name: Download firmware from this tagged build
         if: github.event_name == 'push'
@@ -219,6 +230,12 @@ jobs:
             --pattern "sonoff-dongle-m-otbr-${RELEASE_TAG}*.bin*" \
             --dir artifacts
 
+
+      - name: Validate flasher JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check site/flasher/flasher.js
 
       - name: Assemble GitHub Pages release site
         shell: bash

@@ -28,18 +28,18 @@ This project provides a practical, self-contained OTBR solution with:
 
 ## Download
 
-**Recommended (v2.3.0 onward):** [Scoobler Dongle-M Web Flasher](https://scoobler.github.io/esp-thread-br-sonoff-donglem/) — choose **Fresh installation** or **Upgrade**. The Web Flasher and two-image packages become available after the v2.3.0 release and its first successful GitHub Pages deployment.
+**Recommended:** [Scoobler Dongle-M Web Flasher](https://scoobler.github.io/esp-thread-br-sonoff-donglem/) — use **Fresh installation** for a complete reset or when replacing Sonoff's ESP32 firmware, or **Upgrade** to retain settings on an existing compatible Scoobler installation.
 
 **[View the latest published GitHub Release](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/latest)**
 
-The v2.3.0 release will include two ESP32 firmware files:
+The published **v2.3.0** release includes two ESP32 firmware files:
 
 - `sonoff-dongle-m-otbr-v2.3.0.bin` — full merged firmware, written at `0x0` for Fresh installation (with full-chip erase).
 - `sonoff-dongle-m-otbr-v2.3.0-upgrade.bin` — settings-preserving Upgrade image, written at `0x20000` **only for devices already running Scoobler firmware**.
 
 Both files include matching SHA-256 checksums. Neither image updates the MG24 OpenThread RCP.
 
-Until v2.3.0 is published, the currently released v2.2.0 firmware remains available through [GitHub Releases](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases).
+Previous versions, including v2.2.0, remain available under [GitHub Releases](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases).
 
 ---
 
@@ -184,7 +184,7 @@ For most users the easiest way to install or upgrade is the **Scoobler Dongle-M 
 
 **[Open the Dongle-M Web Flasher](https://scoobler.github.io/esp-thread-br-sonoff-donglem/)**
 
-> **Release note:** The new flasher is being prepared in Draft PR #22. Its GitHub Pages address will be active only after the feature is hardware-approved, merged and released. For the currently published v2.2.0 image, use the [existing Sonoff Dongle Flasher method](#method-2--sonoff-dongle-flasher-alternative) or [esptool](#method-3--manual-esptool).
+> The Web Flasher is hosted on GitHub Pages and uses the published v2.3.0 firmware images. It requires a desktop browser supporting Web Serial (Chrome or Edge) and USB-C access to the ESP32. If browser flashing is unavailable, use the [Sonoff Flasher](#method-2--sonoff-dongle-flasher-alternative) or [esptool](#method-3--manual-esptool).
 
 1. [Complete the prerequisites](#prerequisites): the MG24 must already be in **OpenThread RCP Mode**.
 2. Connect the Dongle-M via USB-C and open the flasher in a supported desktop browser.
@@ -198,36 +198,36 @@ For most users the easiest way to install or upgrade is the **Scoobler Dongle-M 
 
 ### Method 2 — Sonoff Dongle Flasher (alternative)
 
-For manual installation, recovery, or before the GitHub Pages flasher is published, you can use the [official Sonoff Dongle Flasher](https://dongle.sonoff.tech/sonoff-dongle-flasher/).
+For manual installation, recovery, or as an alternative to the Web Flasher, use the [official Sonoff Dongle Flasher](https://dongle.sonoff.tech/sonoff-dongle-flasher/).
 
 1. Download the [merged ESP32 firmware](#download) from a published release.
 2. Connect USB-C, choose your serial device in the Sonoff Dongle Flasher and select **Customize**.
 3. Upload the merged `.bin` and start flashing.
 
-The merged image at `0x0` is **not a settings-preserving upgrade image**. It overwrites NVS. Use the dedicated Upgrade image at `0x20000` if preservation is required, once the new firmware packaging is released.
+The merged image at `0x0` is **not a settings-preserving upgrade image**. It overwrites NVS. Use the dedicated Upgrade image at `0x20000` if settings must be preserved.
 
 The standard Sonoff Web UI firmware-update page does **not** accept this merged ESP32 image.
 
 ### Method 3 — Manual esptool
 
-These examples use the **future two-image releases**. Replace `vNEXT` with the published version and choose the correct serial port. The `--baud 460800` option is the **ESP32 USB flashing speed**, not the MG24 RCP UART speed.
+These examples use the published **v2.3.0 release assets**. Choose the correct serial port. The `--baud 460800` option is the **ESP32 USB flashing speed**, not the MG24 RCP UART speed.
 
 **Fresh installation (erases all ESP32 flash):**
 
 ```powershell
 py -m esptool --chip esp32 --port COM3 erase_flash
-py -m esptool --chip esp32 --port COM3 --baud 460800 write_flash 0x0 sonoff-dongle-m-otbr-vNEXT.bin
+py -m esptool --chip esp32 --port COM3 --baud 460800 write_flash 0x0 sonoff-dongle-m-otbr-v2.3.0.bin
 ```
 
 **Upgrade an existing Scoobler firmware installation (preserves settings):**
 
 ```powershell
-py -m esptool --chip esp32 --port COM3 --baud 460800 write_flash 0x20000 sonoff-dongle-m-otbr-vNEXT-upgrade.bin
+py -m esptool --chip esp32 --port COM3 --baud 460800 write_flash 0x20000 sonoff-dongle-m-otbr-v2.3.0-upgrade.bin
 ```
 
 Linux / macOS: use `python3 -m esptool` instead of `py -m esptool` and replace `COM3` with the actual port (such as `/dev/ttyUSB0`). **Never run `erase_flash` when preserving settings, and never flash the merged full image at `0x0` as an Upgrade.**
 
-CI release packages will contain both `.bin` files and matching SHA-256 checksums. The Upgrade image is deliberately written to both OTA application slots and the Web UI; it does not provide application rollback. For implementation and test details, see [USB upgrade technical notes](docs/usb-web-flasher.md).
+CI release packages contain both `.bin` files and matching SHA-256 checksums. The Upgrade image is deliberately written to both OTA application slots and the Web UI; it does not provide application rollback. For implementation and test details, see [USB upgrade technical notes](docs/usb-web-flasher.md).
 
 ---
 
@@ -587,10 +587,10 @@ Tagged releases use the tag name in the output filename.
 For example, version `vNEXT` will produce both full and settings-preserving upgrade images once the two-image CI workflow is released:
 
 ```text
-sonoff-dongle-m-otbr-vNEXT.bin
-sonoff-dongle-m-otbr-vNEXT.bin.sha256
-sonoff-dongle-m-otbr-vNEXT-upgrade.bin
-sonoff-dongle-m-otbr-vNEXT-upgrade.bin.sha256
+sonoff-dongle-m-otbr-v2.3.0.bin
+sonoff-dongle-m-otbr-v2.3.0.bin.sha256
+sonoff-dongle-m-otbr-v2.3.0-upgrade.bin
+sonoff-dongle-m-otbr-v2.3.0-upgrade.bin.sha256
 ```
 
 The same files are attached automatically to the corresponding GitHub Release.
@@ -627,7 +627,7 @@ For now, the safe and validated approach is:
 
 1. install or restore the official Sonoff Dongle-M ESP32 firmware;
 2. follow the official Sonoff Web UI procedure to select **Thread RCP Mode** and install a compatible MG24 RCP (v2.4.4 / 115200 or v2.4.5 / 460800), **not Zigbee coordinator firmware**;
-3. flash this project's merged **ESP32 host** firmware using the [Sonoff Dongle Flasher](#method-1--pre-built-firmware-using-sonoff-dongle-flasher) or `esptool`;
+3. flash this project's merged **ESP32 host** firmware using the [Scoobler Web Flasher](#method-1--web-flasher-recommended) (Fresh installation), the [Sonoff Dongle Flasher](#method-2--sonoff-dongle-flasher-alternative) or `esptool`;
 4. leave the working MG24 RCP firmware unchanged during later ESP32-only upgrades.
 
 ---

@@ -138,7 +138,7 @@ async function flash() {
     await loader.after("custom_reset", false, "D0|R0|W100|R1|W150|R0|W400");
     status(mode.destructive
       ? "Fresh installation complete; ESP32 reset pulse sent. Connect via Ethernet, or use the setup access point to configure Wi-Fi if needed. Then set up or restore your Thread network."
-      : "Upgrade complete; ESP32 reset pulse sent. The Dongle-M should reconnect over its configured Ethernet or Wi-Fi network with the Thread dataset preserved.";
+      : "Upgrade complete; ESP32 reset pulse sent. The Dongle-M should reconnect over its configured Ethernet or Wi-Fi network with the Thread dataset preserved.");
   } catch (error) {
     status(`Error: ${error.message || error}`);
   } finally {

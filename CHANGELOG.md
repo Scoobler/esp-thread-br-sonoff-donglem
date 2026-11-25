@@ -17,6 +17,12 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - Fix the Pages deploy job's implicit success condition, which skipped
   deployment when the firmware-build and release jobs were intentionally
   skipped during manual redeployment.
+- Correct the hosted flasher's JavaScript syntax error that prevented release
+  manifest loading. Validate JavaScript syntax in CI and before Pages upload.
+- During manual Pages redeployment, deploy the current website source from
+  `main` alongside unmodified firmware and checksums from the specified release.
+- Update README and technical guidance to describe the published v2.3.0 release
+  rather than the previous prerelease state.
 
 
 ## [2.3.0] - 2026-11-25
