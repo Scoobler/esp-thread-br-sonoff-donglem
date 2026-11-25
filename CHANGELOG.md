@@ -32,8 +32,12 @@ and this project uses [Semantic Versioning](https://semver.org/).
   and saved Wi-Fi credentials supported Ethernet-to-Wi-Fi fallback.
 - Fixed browser chip-name detection for classic ESP32 revision 3 and used
   an explicit DTR/RTS reset pulse after flashing.
-- Older v2.0.1 upgrade compatibility, live GitHub Pages deployment and
-  hosted checksum validation remain to be checked; no published release yet.
+- **Legacy migration PASS:** stock Sonoff ESP32 firmware used to install MG24
+  RCP v2.4.4 at 115200 baud, then our v2.0.1 installed and configured with
+  Wi-Fi and the existing Thread dataset. Browser Upgrade to the current
+  candidate rebooted, rejoined Wi-Fi and preserved the exact Thread dataset.
+- Live GitHub Pages deployment and hosted checksum validation remain to be
+  checked; no published release yet.
 
 ## [2.2.0] - 2026-11-25
 
