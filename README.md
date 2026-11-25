@@ -249,6 +249,24 @@ python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
 
 Replace `/dev/ttyUSB0` with the correct serial device.
 
+### Upcoming browser flasher and settings-preserving upgrades (in development)
+
+A future release will offer a GitHub Pages USB flasher with two modes:
+
+- **Fresh install:** erase the full ESP32 flash, then write the complete release image at `0x0`. This **clears Wi-Fi credentials and the Thread dataset**; back up the dataset first.
+- **Upgrade:** write a separate, partition-checked **upgrade image at `0x20000`** without a full erase, preserving the NVS and other settings partitions. This is not a rollback-capable OTA update.
+
+Once released, the new CI build will provide both `sonoff-dongle-m-otbr-<version>.bin` and `sonoff-dongle-m-otbr-<version>-upgrade.bin`. Do **not** use the current merged `v2.2.0` release image for an NVS-preserving upgrade.
+
+For the planned manual upgrade command, use a future release's **upgrade** image (not the merged image):
+
+```bash
+python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
+  write_flash 0x20000 sonoff-dongle-m-otbr-vNEXT-upgrade.bin
+```
+
+These are not yet hardware-validated instructions. See [the implementation plan and validation checklist](docs/usb-web-flasher.md) before testing.
+
 ---
 
 # First boot and network behaviour
