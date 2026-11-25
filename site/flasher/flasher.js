@@ -22,11 +22,11 @@ function refresh() {
   $("latest-details").hidden = custom;
   $("custom-details").hidden = !custom;
   $("mode-warning").innerHTML = mode.destructive
-    ? "Fresh installation erases <strong>all ESP32 flash</strong>, including Wi-Fi credentials and the Thread dataset. Back up your dataset first. MG24 firmware is not flashed."
-    : "Upgrade writes only the ESP32 application slots and Web UI from address <strong>0x20000</strong>. NVS, Wi-Fi credentials, Thread dataset, OTA selection and PHY calibration are not intentionally overwritten. Back up your dataset as a precaution.";
+    ? "Fresh installation <strong>erases all ESP32 flash</strong> and clears existing network and Thread settings. Use this for first-time installation or when replacing stock Sonoff ESP32 firmware. The MG24 RCP is not changed."
+    : "Upgrade is <strong>only for devices already running Scoobler OpenThread Border Router firmware</strong>. It updates the ESP32 application and Web UI from <strong>0x20000</strong> while retaining supported network and Thread settings. Use Fresh installation when replacing stock Sonoff firmware.";
   $("confirmation-label").lastChild.textContent = mode.destructive
-    ? " I have backed up my Thread dataset and accept that all ESP32 settings will be erased."
-    : " I have backed up my Thread dataset and understand this is a USB firmware upgrade.";
+    ? " I understand this will erase all ESP32 settings, and have backed up my Thread dataset if one exists."
+    : " This device already runs Scoobler OpenThread Border Router firmware, and I have backed up my Thread dataset.";
   $("flash").disabled = busy || !$("confirm").checked ||
     (custom ? !$("custom-file").files.length : !releaseManifest);
 }
@@ -137,8 +137,8 @@ async function flash() {
     status("Firmware written and verified. Pulsing ESP32 hardware reset…");
     await loader.after("custom_reset", false, "D0|R0|W100|R1|W150|R0|W400");
     status(mode.destructive
-      ? "Fresh installation flashed and reset pulse sent. The Dongle-M should start its setup SoftAP; configure Wi-Fi and restore your Thread dataset if required."
-      : "Upgrade flashed and reset pulse sent. The Dongle-M should reconnect using its saved Wi-Fi and Thread settings.");
+      ? "Fresh installation complete; ESP32 reset pulse sent. Connect via Ethernet, or use the setup access point to configure Wi-Fi if needed. Then set up or restore your Thread network."
+      : "Upgrade complete; ESP32 reset pulse sent. The Dongle-M should reconnect over its configured Ethernet or Wi-Fi network with the Thread dataset preserved.";
   } catch (error) {
     status(`Error: ${error.message || error}`);
   } finally {
