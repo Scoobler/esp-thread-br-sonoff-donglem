@@ -28,17 +28,18 @@ This project provides a practical, self-contained OTBR solution with:
 
 ## Download
 
-### v2.2.0 release firmware
+**Recommended (v2.3.0 onward):** [Scoobler Dongle-M Web Flasher](https://scoobler.github.io/esp-thread-br-sonoff-donglem/) — choose **Fresh installation** or **Upgrade**. The Web Flasher and two-image packages become available after the v2.3.0 release and its first successful GitHub Pages deployment.
 
-**[Download the ready-to-flash firmware](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.2.0/sonoff-dongle-m-otbr-v2.2.0.bin)**
+**[View the latest published GitHub Release](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/latest)**
 
-**[Download the SHA256 checksum](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.2.0/sonoff-dongle-m-otbr-v2.2.0.bin.sha256)**
+The v2.3.0 release will include two ESP32 firmware files:
 
-The `.bin` above is the **merged ESP32 firmware image** intended for flashing directly onto a Sonoff Dongle-M.
+- `sonoff-dongle-m-otbr-v2.3.0.bin` — full merged firmware, written at `0x0` for Fresh installation (with full-chip erase).
+- `sonoff-dongle-m-otbr-v2.3.0-upgrade.bin` — settings-preserving Upgrade image, written at `0x20000` **only for devices already running Scoobler firmware**.
 
-You do **not** need to build the project yourself if you just want to install the firmware.
+Both files include matching SHA-256 checksums. Neither image updates the MG24 OpenThread RCP.
 
-[View all releases](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases)
+Until v2.3.0 is published, the currently released v2.2.0 firmware remains available through [GitHub Releases](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases).
 
 ---
 
