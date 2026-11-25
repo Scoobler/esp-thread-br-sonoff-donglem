@@ -56,6 +56,12 @@ jobs:
 
           echo "Approved GitHub Actions workflow allowlist validated."
 
+      - name: Validate non-destructive upgrade packager
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools/release/tests -p 'test_*.py' -v
+
       - name: Build Dongle-M firmware
         shell: bash
         run: |
@@ -80,6 +86,19 @@ jobs:
           python3 tools/release/merge_dongle_m_image.py \
             examples/basic_thread_border_router/build-sonoff-dongle-m \
             --output "artifacts/${FIRMWARE_NAME}"
+
+      - name: Create persistent-settings-preserving USB upgrade image
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            UPGRADE_NAME="sonoff-dongle-m-otbr-${GITHUB_REF_NAME}-upgrade.bin"
+          else
+            UPGRADE_NAME="sonoff-dongle-m-otbr-ci-upgrade.bin"
+          fi
+          python3 tools/release/create_upgrade_image.py \
+            examples/basic_thread_border_router/build-sonoff-dongle-m \
+            --output "artifacts/${UPGRADE_NAME}"
 
       - name: Show firmware checksums
         shell: bash
@@ -152,3 +171,69 @@ jobs:
             artifacts/*.bin
             artifacts/*.sha256
           fail_on_unmatched_files: true
+
+  pages:
+    name: Publish browser flasher to GitHub Pages
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out flasher site
+        uses: actions/checkout@v5
+
+      - name: Download release firmware from this workflow
+        uses: actions/download-artifact@v4
+        with:
+          name: sonoff-dongle-m-firmware
+          path: artifacts
+
+      - name: Assemble GitHub Pages release site
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp -r site/flasher/. dist/
+          cp artifacts/*.bin dist/
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          dist = Path("dist")
+          images = {
+              "full": (f"sonoff-dongle-m-otbr-{tag}.bin", 0),
+              "upgrade": (f"sonoff-dongle-m-otbr-{tag}-upgrade.bin", 0x20000),
+          }
+          manifest = {"version": tag}
+          for key, (filename, offset) in images.items():
+              path = dist / filename
+              if not path.is_file():
+                  raise SystemExit(f"Required release image missing: {filename}")
+              sha = hashlib.sha256(path.read_bytes()).hexdigest()
+              expected = (Path("artifacts") / (filename + ".sha256")).read_text().split()[0]
+              if sha != expected:
+                  raise SystemExit(f"Checksum mismatch for {filename}")
+              manifest[key] = {"file": filename, "offset": offset, "sha256": sha}
+          (dist / "firmware.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages website
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+      - name: Publish GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

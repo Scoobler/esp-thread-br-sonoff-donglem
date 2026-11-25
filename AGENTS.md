@@ -83,8 +83,10 @@ During every Espressif upstream synchronisation:
 - If a new workflow is genuinely required, explicitly assess its triggers, permissions and purpose before adding it to the allowlist.
 - Update the allowlist whenever a new Sonoff-specific workflow is intentionally approved.
 
-A future GitHub Pages deployment workflow may eventually be added, but it is
-not yet approved or implemented.
+GitHub Pages deployment is implemented as a tagged-release `pages` job
+within the already approved `build_dongle_m.yml` workflow. It publishes the
+browser flasher and validated release firmware assets only after the release
+job succeeds. No separate Pages workflow file is approved or needed.
 
 These rules apply specifically to `.github/workflows/`. Do not
 indiscriminately delete other upstream configuration files.
