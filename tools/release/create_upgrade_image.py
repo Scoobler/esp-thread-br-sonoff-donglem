@@ -29,7 +29,7 @@ def check_partition_table(path: Path) -> None:
     found = {}
     for pos in range(0, len(table) - 31, 32):
         magic, ptype, subtype, offset, size, name, flags = struct.unpack_from("<HBBII16sI", table, pos)
-        if magic == 0xFFFF:
+        if magic in (0xFFFF, 0xEBEB):  # end of entries or ESP-IDF MD5 trailer
             break
         if magic != MAGIC:
             raise ValueError(f"Unexpected partition-table entry at {pos:#x}: {magic:#x}")
