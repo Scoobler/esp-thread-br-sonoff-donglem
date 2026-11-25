@@ -89,9 +89,11 @@ async function flash() {
   let transport = null;
   try {
     if (!("serial" in navigator)) throw Error("Web Serial is unavailable. Use desktop Chrome or Edge over HTTPS.");
-    const image = await getImage(mode);
+    // requestPort requires transient user activation. Prompt before fetching
+    // and hashing a multi-megabyte image, which can outlast that activation.
     status("Select the Dongle-M USB serial port in the browser prompt.");
     const port = await navigator.serial.requestPort();
+    const image = await getImage(mode);
     transport = new Transport(port, true);
     const terminal = {
       clean() {},
