@@ -39,7 +39,7 @@
       </label>
       <label class="choice"><input type="radio" name="mode" value="upgrade">
         <strong>Upgrade</strong>
-        <small>Keep ESP32 NVS, Wi-Fi credentials and Thread dataset. Update application and Web UI only.</small>
+        <small>Only for devices already running Scoobler OpenThread Border Router firmware. Preserve Wi-Fi credentials and the Thread dataset.</small>
       </label>
     </div>
     <p class="warning" id="mode-warning">Fresh installation erases <strong>all ESP32 flash</strong>. Back up your Thread Active Dataset and prepare to configure Wi-Fi again. The MG24 RCP is separate and is not flashed.</p>
@@ -57,7 +57,7 @@
   </section>
   <section class="panel">
     <h2>3 · Flash over USB-C</h2>
-    <p>Close MobaXterm, serial monitors and Sonoff Dongle Flasher before proceeding. The MG24 must already be running a compatible Sonoff <strong>OpenThread RCP</strong>.</p>
+    <p>Ensure you've completed the <a href="https://github.com/Scoobler/esp-thread-br-sonoff-donglem#prerequisites" target="_blank" rel="noopener noreferrer">prerequisites in the README</a> before flashing.</p>
     <label id="confirmation-label"><input id="confirm" type="checkbox"> I have backed up my Thread dataset and understand this operation erases my ESP32 settings.</label>
     <p><button id="flash" disabled>Connect and flash</button></p>
     <label for="progress">Progress</label><progress id="progress" value="0" max="100"></progress>
