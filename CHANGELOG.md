@@ -7,6 +7,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-25
+
 ### Added
 
 - GitHub Pages USB flasher candidate with **Fresh installation** (full ESP32
