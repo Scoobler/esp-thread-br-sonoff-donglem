@@ -56,6 +56,12 @@ jobs:
 
           echo "Approved GitHub Actions workflow allowlist validated."
 
+      - name: Validate non-destructive upgrade packager
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools/release/tests -p 'test_*.py' -v
+
       - name: Build Dongle-M firmware
         shell: bash
         run: |
