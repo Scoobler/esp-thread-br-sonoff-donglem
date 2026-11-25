@@ -46,8 +46,9 @@ async function getImage(mode) {
     if (!file) throw Error("Choose a firmware image");
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (bytes.length === 0) throw Error("Selected firmware file is empty");
-    if (mode.destructive && bytes[0] !== 0xe9) {
-      throw Error("Fresh install image should start with ESP32 bootloader magic (0xE9)");
+    // Merged full images are based at 0x0 but the bootloader begins at 0x1000.
+    if (mode.destructive && (bytes.length <= 0x1000 || bytes[0x1000] !== 0xe9)) {
+      throw Error("Fresh install merged image must contain the ESP32 bootloader at 0x1000 (magic 0xE9)");
     }
     if (!mode.destructive && bytes[0] !== 0xe9) {
       throw Error("Upgrade image should start with an ESP32 application header (0xE9)");
