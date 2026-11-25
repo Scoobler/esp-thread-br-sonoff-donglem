@@ -58,7 +58,7 @@ python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
 
 Replace `/dev/ttyUSB0` and the `vNEXT` placeholders with your device and the exact filenames from a future release. Windows uses e.g. `COM3`. Never use `erase_flash` for an upgrade. Never flash the full merged image at `0x0` if you expect to preserve NVS.
 
-The USB upgrade has been hardware-tested to preserve Wi-Fi and Thread settings on the reported units. The existing OTA slot selection was retained after writing both application slots; this is not a rollback-enabled update scheme. The proposed v2.0.1-to-current browser-upgrade test remains outstanding.
+The USB upgrade has been hardware-tested to preserve Wi-Fi and Thread settings on the reported units. The existing OTA slot selection was retained after writing both application slots; this is not a rollback-enabled update scheme. **Direct upgrading from v2.0.1 to the new candidate has also passed hardware validation.**
 
 ## GitHub Pages publishing
 
@@ -81,13 +81,14 @@ A PR build creates test firmware artifacts but **does not publish the website**.
 - Browser Fresh installation: complete ESP32 erase and merged-image flash succeeded; initial automatic reset needed an explicit DTR/RTS EN pulse and was corrected. On retest the ESP32 booted normally, rejoined Wi-Fi after provisioning, and the Thread dataset was reapplied.
 - Browser Upgrade: settings-preserving upgrade image was programmed at `0x20000`, the corrected automatic reset worked, the Dongle-M rejoined Wi-Fi, and the Thread dataset remained correct.
 - Browser UI wording was refined to support Ethernet installations and to reserve Upgrade for existing Scoobler firmware only.
+- **Legacy upgrade PASS (v2.0.1 → new candidate):** Restored official Sonoff ESP32 firmware, downgraded MG24 to **OpenThread RCP v2.4.4 (115200 baud)**, flashed our **v2.0.1** ESP32 firmware, provisioned Wi-Fi and applied the existing Thread dataset. Used the browser **Upgrade** path at `0x20000`; firmware updated, restarted, rejoined Wi-Fi, and retained the exact Thread dataset.
 
-**Not yet verified:** upgrading directly from v2.0.1 to the new build; published GitHub Pages/latest-release path and deployment; rejection of a deliberately invalid published SHA-256. These are useful additional checks, not claimed successes.
+**Not yet verified:** published GitHub Pages/latest-release path and deployment; rejection of an intentionally invalid published SHA-256. Those checks require the hosted release or a test manifest; they are not claimed successes.
 
 ## Remaining release checks
 
-1. Optionally exercise v2.0.1 → new candidate with a saved dataset and Wi-Fi settings on the **115200-baud** MG24 RCP unit; v2.0.1 does not auto-detect 460800 baud, though its partition layout matches.
-2. Verify the latest PR CI build/checksums after final documentation changes.
-3. After merge/tag, confirm GitHub Pages deployment, hosted firmware downloads and SHA-256 verification in the real published page.
+1. Verify the latest PR CI build/checksums after final documentation changes.
+2. After merge/tag, confirm GitHub Pages deployment, hosted firmware downloads and SHA-256 verification in the real published page.
+3. Check that a corrupted published image/checksum is rejected before flashing, without risking an erase.
 
 Do not claim the remaining checks passed without evidence. Do not merge or release another firmware source change without hardware validation.
