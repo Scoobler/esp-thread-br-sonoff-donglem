@@ -165,6 +165,18 @@ Confirm that the Dongle-M has rejoined the original Thread network. Check Thread
 
 </details>
 
+### Updating the MG24 OpenThread RCP firmware
+
+If you want to update the MG24 RCP, **back up your Thread dataset first** using the steps above.
+
+1. Connect the Dongle-M to your PC via USB-C, open the [Sonoff Dongle Flasher](https://dongle.sonoff.tech/sonoff-dongle-flasher/), select the device and flash the **latest official Sonoff firmware**.
+2. Join the Sonoff setup Wi-Fi AP, set a password, then reconnect to the AP using that password and open the Sonoff Web UI.
+3. In the Web UI, choose **Firmware → MG24 → OpenThread** and flash the latest **compatible Thread RCP** firmware.
+4. Return to the Sonoff Dongle Flasher and flash the [latest ESP32 firmware from this repository](#download).
+5. Reconnect the Dongle-M and [restore your Thread dataset](#dataset-backup--upgrade-notes) if required.
+
+The ESP32 automatically detects the RCP at **115200 or 460800 baud**; no manual baud setting is needed. The custom ESP32 image does **not** update the MG24 itself.
+
 ---
 
 # Flashing the firmware
