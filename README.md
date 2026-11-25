@@ -65,17 +65,13 @@ The firmware is based on Espressif’s current `esp-thread-br` architecture rath
 
 ## Prerequisites
 
-**First install and run the official Sonoff Dongle-M firmware.** Use its Web UI to configure the onboard EFR32MG24 in **Thread RCP Mode** before replacing the ESP32 firmware with this project. Do not leave the MG24 in Zigbee coordinator mode: Zigbee is not compatible with OpenThread Spinel.
+**Before the first installation, use the official Sonoff firmware to configure the onboard EFR32MG24 in OpenThread RCP Mode.** The ESP32 firmware in this project cannot configure or flash the MG24. Zigbee coordinator firmware is not compatible.
 
 ### Step 1 — Initial Sonoff setup
 
-1. Power up the Dongle-M.
-2. Join the temporary Wi-Fi access point created by the stock Sonoff firmware.
-3. Set a password.
-4. Reconnect to the secured access point.
-5. Configure Wi-Fi credentials.
-6. Find the Dongle-M IP address.
-7. Open the Sonoff Web UI in a browser.
+1. Power up the Dongle-M with its official Sonoff ESP32 firmware.
+2. Open the Sonoff Web UI using Ethernet if available, or follow Sonoff's initial Wi-Fi access-point setup: join the setup AP, set a password, reconnect, configure Wi-Fi if needed, and browse to the device IP address.
+3. Log in to the Sonoff Web UI.
 
 ### Step 2 — Enable Thread RCP Mode
 
@@ -91,7 +87,7 @@ The firmware is based on Espressif’s current `esp-thread-br` architecture rath
 This prepares the onboard EFR32MG24 with the OpenThread RCP firmware expected by this project. If the MG24 is currently running Zigbee firmware, switch it to **Thread RCP Mode using Sonoff's normal procedure** before flashing the custom ESP32 host image.
 
 > [!IMPORTANT]
-> **RCP compatibility (v2.2.0):** One ESP32 image supports Sonoff OpenThread
+> **RCP compatibility (v2.2.0 onward):** One ESP32 image supports Sonoff OpenThread
 > RCP **v2.4.4 at 115200 baud** and **v2.4.5 at 460800 baud**. On every boot,
 > the ESP32 probes and validates the RCP's Spinel protocol automatically;
 > **no manual UART baud selection is needed**. The probe is read-only and does
@@ -106,7 +102,7 @@ This prepares the onboard EFR32MG24 with the OpenThread RCP firmware expected by
 
 ## Dataset Backup & Upgrade Notes
 
-If the Dongle-M already belongs to a Thread network, keep a secure copy of its Active Operational Dataset before flashing or upgrading. The manual backup remains useful even if a future firmware version preserves credentials automatically.
+If the Dongle-M already belongs to a Thread network, keep a secure copy of its Active Operational Dataset before flashing or upgrading. **Fresh installation erases the ESP32 settings; the settings-preserving Upgrade option does not deliberately erase NVS.** Keep a backup even when using Upgrade.
 
 <details>
 <summary><strong>How to back up and restore your Thread network</strong></summary>
@@ -135,7 +131,7 @@ Flashing operations may erase stored credentials, particularly when partition la
 
 ### Step 4 — Reconnect Ethernet or configure Wi-Fi
 
-After flashing, allow the Dongle-M to establish its Ethernet connection or use the SoftAP to provision Wi-Fi again if credentials were lost, as described in [First boot and network behaviour](#first-boot-and-network-behaviour). Wait until the device exits provisioning mode and reaches normal operation. Do not attempt OpenThread dataset commands while it remains in SoftAP mode.
+After flashing, connect via Ethernet or configure Wi-Fi using the SoftAP if required, as described in [First boot and network behaviour](#first-boot-and-network-behaviour). For a settings-preserving Upgrade, existing connectivity should be retained. Wait until the device reaches normal operation before attempting OpenThread dataset commands.
 
 ### Step 5 — Restore the Thread dataset
 
@@ -172,7 +168,7 @@ If you want to update the MG24 RCP, **back up your Thread dataset first** using 
 1. Connect the Dongle-M to your PC via USB-C, open the [Sonoff Dongle Flasher](https://dongle.sonoff.tech/sonoff-dongle-flasher/), select the device and flash the **latest official Sonoff firmware**.
 2. Join the Sonoff setup Wi-Fi AP, set a password, then reconnect to the AP using that password and open the Sonoff Web UI.
 3. In the Web UI, choose **Firmware → MG24 → OpenThread** and flash the latest **compatible Thread RCP** firmware.
-4. Return to the Sonoff Dongle Flasher and flash the [latest ESP32 firmware from this repository](#download).
+4. Use this project's [Web Flasher](#method-1--web-flasher-recommended) with **Fresh installation** to replace the official Sonoff ESP32 firmware.
 5. Reconnect the Dongle-M and [restore your Thread dataset](#dataset-backup--upgrade-notes) if required.
 
 The ESP32 automatically detects the RCP at **115200 or 460800 baud**; no manual baud setting is needed. The custom ESP32 image does **not** update the MG24 itself.
@@ -181,91 +177,56 @@ The ESP32 automatically detects the RCP at **115200 or 460800 baud**; no manual 
 
 # Flashing the firmware
 
-There are two supported approaches.
+For most users the easiest way to install or upgrade is the **Scoobler Dongle-M Web Flasher** using USB-C and desktop Chrome or Edge.
 
-## Method 1 — Pre-built firmware using Sonoff Dongle Flasher
+### Method 1 — Web Flasher (recommended)
 
-This is the recommended method for most users.
+**[Open the Dongle-M Web Flasher](https://scoobler.github.io/esp-thread-br-sonoff-donglem/)**
 
-### Steps
+> **Release note:** The new flasher is being prepared in Draft PR #22. Its GitHub Pages address will be active only after the feature is hardware-approved, merged and released. For the currently published v2.2.0 image, use the [existing Sonoff Dongle Flasher method](#method-2--sonoff-dongle-flasher-alternative) or [esptool](#method-3--manual-esptool).
 
-1. Download the latest merged firmware:
+1. [Complete the prerequisites](#prerequisites): the MG24 must already be in **OpenThread RCP Mode**.
+2. Connect the Dongle-M via USB-C and open the flasher in a supported desktop browser.
+3. Choose:
+   - **Fresh installation** when converting from official Sonoff ESP32 firmware, changing from another firmware or intentionally starting over. This **erases all ESP32 settings**, including the Thread dataset and saved Wi-Fi configuration.
+   - **Upgrade** **only when the Dongle-M already runs Scoobler OpenThread Border Router firmware** with the compatible partition layout. This writes the application and Web UI while leaving NVS and network settings in place.
+4. Keep **Latest published release** selected, or choose a trusted **Custom .bin** if you are testing a development candidate; acknowledge the operation and select **Connect and flash**.
+5. After the reset, access the Dongle-M over Ethernet or configure Wi-Fi as appropriate. With Fresh installation, restore the saved Thread dataset if required. With Upgrade, verify that the dataset and existing connectivity remain unchanged.
 
-   **[sonoff-dongle-m-otbr-v2.2.0.bin](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/download/v2.2.0/sonoff-dongle-m-otbr-v2.2.0.bin)**
+**Both modes update only the ESP32.** The MG24 OpenThread RCP firmware is not flashed. Back up your dataset before either operation. See [dataset backup and restoration](#dataset-backup--upgrade-notes).
 
-2. Plug the Dongle-M into your computer using USB.
+### Method 2 — Sonoff Dongle Flasher (alternative)
 
-3. Open the official Sonoff Dongle Flasher:
+For manual installation, recovery, or before the GitHub Pages flasher is published, you can use the [official Sonoff Dongle Flasher](https://dongle.sonoff.tech/sonoff-dongle-flasher/).
 
-   https://dongle.sonoff.tech/sonoff-dongle-flasher/
+1. Download the [merged ESP32 firmware](#download) from a published release.
+2. Connect USB-C, choose your serial device in the Sonoff Dongle Flasher and select **Customize**.
+3. Upload the merged `.bin` and start flashing.
 
-4. Click **Connect** and select the Dongle-M serial port.
+The merged image at `0x0` is **not a settings-preserving upgrade image**. It overwrites NVS. Use the dedicated Upgrade image at `0x20000` if preservation is required, once the new firmware packaging is released.
 
-   Port selection may be requested more than once; this is normal.
+The standard Sonoff Web UI firmware-update page does **not** accept this merged ESP32 image.
 
-5. Click **Select**.
+### Method 3 — Manual esptool
 
-6. Choose **Customize**.
+These examples use the **future two-image releases**. Replace `vNEXT` with the published version and choose the correct serial port. The `--baud 460800` option is the **ESP32 USB flashing speed**, not the MG24 RCP UART speed.
 
-7. Upload:
-
-   ```text
-   sonoff-dongle-m-otbr-v2.2.0.bin
-   ```
-
-8. Start the flash.
-
-The Dongle-M will reboot automatically when flashing completes.
-
-> The normal Sonoff Web UI firmware-update page will **not** accept this image.
->
-> Use the Sonoff Dongle Flasher or `esptool`.
-
----
-
-## Method 2 — Flash using esptool
-
-The release image is a merged ESP32 image and should be written at address `0x0`.
-
-The `--baud 460800` setting in the commands below is the **ESP32 USB flashing speed**, not the UART speed between the ESP32 and the MG24 RCP (which the firmware detects automatically).
-
-### Windows PowerShell
+**Fresh installation (erases all ESP32 flash):**
 
 ```powershell
-py -m esptool --chip esp32 --port COM3 --baud 460800 `
-  --before default_reset --after hard_reset `
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.2.0.bin
+py -m esptool --chip esp32 --port COM3 erase_flash
+py -m esptool --chip esp32 --port COM3 --baud 460800 write_flash 0x0 sonoff-dongle-m-otbr-vNEXT.bin
 ```
 
-Replace `COM3` with the serial port used by your Dongle-M.
+**Upgrade an existing Scoobler firmware installation (preserves settings):**
 
-### Linux / macOS
-
-```bash
-python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
-  --before default_reset --after hard_reset \
-  write_flash 0x0 sonoff-dongle-m-otbr-v2.2.0.bin
+```powershell
+py -m esptool --chip esp32 --port COM3 --baud 460800 write_flash 0x20000 sonoff-dongle-m-otbr-vNEXT-upgrade.bin
 ```
 
-Replace `/dev/ttyUSB0` with the correct serial device.
+Linux / macOS: use `python3 -m esptool` instead of `py -m esptool` and replace `COM3` with the actual port (such as `/dev/ttyUSB0`). **Never run `erase_flash` when preserving settings, and never flash the merged full image at `0x0` as an Upgrade.**
 
-### Upcoming browser flasher and settings-preserving upgrades (in development)
-
-A future release will offer a GitHub Pages USB flasher with two modes:
-
-- **Fresh install:** erase the full ESP32 flash, then write the complete release image at `0x0`. This **clears Wi-Fi credentials and the Thread dataset**; back up the dataset first.
-- **Upgrade:** write a separate, partition-checked **upgrade image at `0x20000`** without a full erase, preserving the NVS and other settings partitions. This is not a rollback-capable OTA update.
-
-Once released, the new CI build will provide both `sonoff-dongle-m-otbr-<version>.bin` and `sonoff-dongle-m-otbr-<version>-upgrade.bin`. Do **not** use the current merged `v2.2.0` release image for an NVS-preserving upgrade.
-
-For the planned manual upgrade command, use a future release's **upgrade** image (not the merged image):
-
-```bash
-python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
-  write_flash 0x20000 sonoff-dongle-m-otbr-vNEXT-upgrade.bin
-```
-
-These are not yet hardware-validated instructions. See [the implementation plan and validation checklist](docs/usb-web-flasher.md) before testing.
+CI release packages will contain both `.bin` files and matching SHA-256 checksums. The Upgrade image is deliberately written to both OTA application slots and the Web UI; it does not provide application rollback. For implementation and test details, see [USB upgrade technical notes](docs/usb-web-flasher.md).
 
 ---
 
@@ -616,21 +577,19 @@ Normal branch builds produce CI artifacts such as:
 ```text
 sonoff-dongle-m-otbr-ci.bin
 sonoff-dongle-m-otbr-ci.bin.sha256
+sonoff-dongle-m-otbr-ci-upgrade.bin
+sonoff-dongle-m-otbr-ci-upgrade.bin.sha256
 ```
 
 Tagged releases use the tag name in the output filename.
 
-For example:
+For example, version `vNEXT` will produce both full and settings-preserving upgrade images once the two-image CI workflow is released:
 
 ```text
-v2.2.0
-```
-
-produces:
-
-```text
-sonoff-dongle-m-otbr-v2.2.0.bin
-sonoff-dongle-m-otbr-v2.2.0.bin.sha256
+sonoff-dongle-m-otbr-vNEXT.bin
+sonoff-dongle-m-otbr-vNEXT.bin.sha256
+sonoff-dongle-m-otbr-vNEXT-upgrade.bin
+sonoff-dongle-m-otbr-vNEXT-upgrade.bin.sha256
 ```
 
 The same files are attached automatically to the corresponding GitHub Release.
