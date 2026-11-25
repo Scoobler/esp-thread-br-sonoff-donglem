@@ -263,7 +263,9 @@ jobs:
   pages:
     name: Publish browser flasher to GitHub Pages
     needs: pages_prepare
-    if: needs.pages_prepare.result == 'success'
+    # Explicit status check is required when upstream build/release jobs were
+    # intentionally skipped for a manual pages_release_tag redeployment.
+    if: ${{ always() && needs.pages_prepare.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       pages: write
