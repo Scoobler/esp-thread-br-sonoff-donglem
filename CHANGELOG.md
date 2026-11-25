@@ -7,6 +7,34 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- GitHub Pages USB flasher candidate with **Fresh installation** (full ESP32
+  erase and merged image at `0x0`) and **Upgrade** (application slots and
+  Web UI at `0x20000`, preserving NVS and the Thread dataset on the
+  validated partition layout). Upgrade is restricted to existing Scoobler
+  OpenThread Border Router installations.
+- CI-generated full and upgrade images with SHA-256 checksums, an upgrade
+  partition-layout safety check and a tagged-release GitHub Pages deployment.
+
+### Documentation
+
+- Make the project's browser flasher the recommended user installation path
+  after release. Keep the official Sonoff flasher for MG24 prerequisites and
+  ESP32 recovery, and document manual USB flashing for both modes.
+
+### Validation (2026-11-25)
+
+- **HARDWARE PASS** reported for browser full erase/flash with automatic
+  reset and first-time Wi-Fi/Thread setup; settings-preserving browser upgrade
+  with reboot, Wi-Fi reconnection and saved Thread dataset verified.
+- Manual USB upgrade passed on Wi-Fi and Ethernet units; dataset persisted,
+  and saved Wi-Fi credentials supported Ethernet-to-Wi-Fi fallback.
+- Fixed browser chip-name detection for classic ESP32 revision 3 and used
+  an explicit DTR/RTS reset pulse after flashing.
+- Older v2.0.1 upgrade compatibility, live GitHub Pages deployment and
+  hosted checksum validation remain to be checked; no published release yet.
+
 ## [2.2.0] - 2026-11-25
 
 ### Added
