@@ -14,6 +14,9 @@ and this project uses [Semantic Versioning](https://semver.org/).
   during the v2.3.0 tag deployment. A manual workflow-dispatch option can
   redeploy the exact existing published release files without rebuilding or
   moving an already-published version tag.
+- Fix the Pages deploy job's implicit success condition, which skipped
+  deployment when the firmware-build and release jobs were intentionally
+  skipped during manual redeployment.
 
 
 ## [2.3.0] - 2026-11-25
