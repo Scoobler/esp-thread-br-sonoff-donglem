@@ -1,6 +1,6 @@
 # USB web flasher and settings-preserving upgrades (development candidate)
 
-This feature is **not included in v2.2.0**. It requires a CI build and hardware validation on the Sonoff Dongle-M before release.
+This feature is **not included in v2.2.0**. Hardware validation of browser flashing and settings-preserving upgrades was reported on **2026-11-25**, but the feature is not yet merged, tagged or published. The GitHub Pages deployment remains untested until a tagged release.
 
 ## Design
 
@@ -32,12 +32,12 @@ The site source is in `site/flasher/`. It uses the Web Serial API and Espressif 
 
 The UI offers two operations:
 
-- **Fresh installation:** explicit full-chip erase then merged image at `0x0`. This removes Wi-Fi credentials, Thread state and ESP32 settings.
-- **Upgrade:** no full-chip erase; writes only the upgrade binary at `0x20000`. In the validated layout, this leaves NVS and OTA metadata untouched.
+- **Fresh installation:** explicit full-chip erase then merged image at `0x0`. This removes Wi-Fi credentials, Thread state and ESP32 settings. It is required when replacing the original Sonoff ESP32 firmware.
+- **Upgrade:** **only for an existing Scoobler OTBR installation** with the compatible partition layout. No full-chip erase; writes only the upgrade binary at `0x20000`. In the validated layout, this leaves NVS and OTA metadata untouched.
 
 Both operations support published firmware or a manually selected custom `.bin` file. The default published image is downloaded from GitHub Pages and verified against its SHA-256 checksum before flashing. Custom binary files require extra care and are not release-verified.
 
-The page is not a production flasher until the hardware tests pass. MG24 updates remain **out of scope**.
+The page has passed the reported fresh/upgrade hardware tests, including automatic reset. It is still a Draft PR and not a published production flasher. MG24 updates remain **out of scope**.
 
 ## Manual USB commands
 
@@ -58,7 +58,7 @@ python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
 
 Replace `/dev/ttyUSB0` and the `vNEXT` placeholders with your device and the exact filenames from a future release. Windows uses e.g. `COM3`. Never use `erase_flash` for an upgrade. Never flash the full merged image at `0x0` if you expect to preserve NVS.
 
-These are **development instructions**, not claims that persistence has passed hardware testing. Validate that the existing OTA slot selection works after writing both application slots.
+The USB upgrade has been hardware-tested to preserve Wi-Fi and Thread settings on the reported units. The existing OTA slot selection was retained after writing both application slots; this is not a rollback-enabled update scheme. The proposed v2.0.1-to-current browser-upgrade test remains outstanding.
 
 ## GitHub Pages publishing
 
@@ -72,15 +72,22 @@ https://scoobler.github.io/esp-thread-br-sonoff-donglem/
 
 A PR build creates test firmware artifacts but **does not publish the website**. This avoids deploying unvalidated firmware. The first Pages deployment occurs after a validated release tag.
 
-## Hardware gate
+## Hardware validation record — 2026-11-25
 
-Before merging and tagging a new release, test:
+**HARDWARE PASS reported by the hardware tester.**
 
-1. Full erase and fresh flashing with a backed-up dataset; confirm provisioning and Thread network setup.
-2. Reconfigure Wi-Fi and restore the active Thread dataset.
-3. Flash an upgrade candidate over an installed older build using the image at `0x20000`, with **no erase**.
-4. Confirm Wi-Fi credentials, active dataset, Thread state, Home Assistant, Web UI and Ethernet/Wi-Fi failover survive.
-5. Repeat via Chrome/Edge Web Serial (fresh and upgrade), including checksum rejection for a corrupted file.
-6. Confirm firmware artifacts, checksums and GitHub Pages deploy after tagging.
+- Windows manual esptool upgrade on a Wi-Fi unit: firmware booted, rejoined saved Wi-Fi and Thread; `ot dataset active -x` matched the saved dataset exactly.
+- Raspberry Pi manual esptool upgrade on an Ethernet unit: firmware booted over Ethernet, retained its Thread dataset and stored Wi-Fi credentials; fallback to Wi-Fi was exercised.
+- Browser Fresh installation: complete ESP32 erase and merged-image flash succeeded; initial automatic reset needed an explicit DTR/RTS EN pulse and was corrected. On retest the ESP32 booted normally, rejoined Wi-Fi after provisioning, and the Thread dataset was reapplied.
+- Browser Upgrade: settings-preserving upgrade image was programmed at `0x20000`, the corrected automatic reset worked, the Dongle-M rejoined Wi-Fi, and the Thread dataset remained correct.
+- Browser UI wording was refined to support Ethernet installations and to reserve Upgrade for existing Scoobler firmware only.
 
-**Do not merge or release without explicit HARDWARE PASS.**
+**Not yet verified:** upgrading directly from v2.0.1 to the new build; published GitHub Pages/latest-release path and deployment; rejection of a deliberately invalid published SHA-256. These are useful additional checks, not claimed successes.
+
+## Remaining release checks
+
+1. Optionally exercise v2.0.1 → new candidate with a saved dataset and Wi-Fi settings on the **115200-baud** MG24 RCP unit; v2.0.1 does not auto-detect 460800 baud, though its partition layout matches.
+2. Verify the latest PR CI build/checksums after final documentation changes.
+3. After merge/tag, confirm GitHub Pages deployment, hosted firmware downloads and SHA-256 verification in the real published page.
+
+Do not claim the remaining checks passed without evidence. Do not merge or release another firmware source change without hardware validation.
