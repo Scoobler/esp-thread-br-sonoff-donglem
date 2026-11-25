@@ -1,6 +1,6 @@
-# USB web flasher and settings-preserving upgrades (development candidate)
+# USB web flasher and settings-preserving upgrades
 
-This feature is **not included in v2.2.0**. Hardware validation of browser flashing and settings-preserving upgrades was reported on **2026-11-25**, but the feature is not yet merged, tagged or published. The GitHub Pages deployment remains untested until a tagged release.
+Released in **v2.3.0** on **2026-11-25**, after hardware validation of Fresh installation, settings-preserving Upgrade, and the v2.0.1 compatibility path. The GitHub Pages site has been deployed; a published JavaScript syntax defect is being corrected separately. Use the site only after that correction is deployed and browser-loaded firmware metadata is verified.
 
 ## Design
 
@@ -37,7 +37,7 @@ The UI offers two operations:
 
 Both operations support published firmware or a manually selected custom `.bin` file. The default published image is downloaded from GitHub Pages and verified against its SHA-256 checksum before flashing. Custom binary files require extra care and are not release-verified.
 
-The page has passed the reported fresh/upgrade hardware tests, including automatic reset. It is still a Draft PR and not a published production flasher. MG24 updates remain **out of scope**.
+The browser flasher passed fresh/upgrade hardware tests, including automatic reset, prior to v2.3.0 release. The hosted v2.3.0 deployment must also pass its JavaScript and release-manifest smoke tests. MG24 updates remain **out of scope**.
 
 ## Manual USB commands
 
@@ -56,21 +56,21 @@ python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
   write_flash 0x20000 sonoff-dongle-m-otbr-vNEXT-upgrade.bin
 ```
 
-Replace `/dev/ttyUSB0` and the `vNEXT` placeholders with your device and the exact filenames from a future release. Windows uses e.g. `COM3`. Never use `erase_flash` for an upgrade. Never flash the full merged image at `0x0` if you expect to preserve NVS.
+Replace `/dev/ttyUSB0` with your serial port and `vNEXT` with the published release (for example `v2.3.0`). Windows uses e.g. `COM3`. Never use `erase_flash` for an upgrade. Never flash the full merged image at `0x0` if you expect to preserve NVS.
 
 The USB upgrade has been hardware-tested to preserve Wi-Fi and Thread settings on the reported units. The existing OTA slot selection was retained after writing both application slots; this is not a rollback-enabled update scheme. **Direct upgrading from v2.0.1 to the new candidate has also passed hardware validation.**
 
 ## GitHub Pages publishing
 
-The existing approved `.github/workflows/build_dongle_m.yml` workflow packages both images during CI. When a **version tag is pushed** and GitHub Release publishing succeeds, its Pages job deploys the static flasher together with the release binaries and a checked `firmware.json` manifest.
+The existing approved `.github/workflows/build_dongle_m.yml` workflow packages both images during CI. For tagged releases, it prepares and deploys the static flasher with checked release binaries and `firmware.json`. Website preparation and deployment run as separate jobs. A manual `pages_release_tag` input can redeploy the existing published firmware using the latest website source from `main` without moving a release tag.
 
-**One-time repository setup required:** In GitHub Settings → Pages, select **GitHub Actions** as the build/deployment source, and ensure repository/org Pages policies permit deployments. No extra GitHub Actions workflow file is added. The intended URL after the first successful tagged deployment is:
+**Repository configuration:** GitHub Pages uses **GitHub Actions** as the build/deployment source, with `v*` release tags permitted by the `github-pages` environment. No extra workflow file was added. Published flasher URL:
 
 ```text
 https://scoobler.github.io/esp-thread-br-sonoff-donglem/
 ```
 
-A PR build creates test firmware artifacts but **does not publish the website**. This avoids deploying unvalidated firmware. The first Pages deployment occurs after a validated release tag.
+A PR build creates test firmware artifacts but **does not publish the website**. This avoids deploying unvalidated firmware. The first Pages deployment occurred after the validated v2.3.0 release; the browser JavaScript syntax issue found afterward is being corrected.
 
 ## Hardware validation record — 2026-11-25
 
@@ -83,12 +83,12 @@ A PR build creates test firmware artifacts but **does not publish the website**.
 - Browser UI wording was refined to support Ethernet installations and to reserve Upgrade for existing Scoobler firmware only.
 - **Legacy upgrade PASS (v2.0.1 → new candidate):** Restored official Sonoff ESP32 firmware, downgraded MG24 to **OpenThread RCP v2.4.4 (115200 baud)**, flashed our **v2.0.1** ESP32 firmware, provisioned Wi-Fi and applied the existing Thread dataset. Used the browser **Upgrade** path at `0x20000`; firmware updated, restarted, rejoined Wi-Fi, and retained the exact Thread dataset.
 
-**Not yet verified:** published GitHub Pages/latest-release path and deployment; rejection of an intentionally invalid published SHA-256. Those checks require the hosted release or a test manifest; they are not claimed successes.
+**Not yet verified:** successful JavaScript initialization of the live site's latest-release path following its syntax correction, and rejection of an intentionally invalid SHA-256. The site was deployed, but the initial JavaScript contained a syntax error that blocked manifest loading.
 
-## Remaining release checks
+## Remaining website checks
 
-1. Verify the latest PR CI build/checksums after final documentation changes.
-2. After merge/tag, confirm GitHub Pages deployment, hosted firmware downloads and SHA-256 verification in the real published page.
-3. Check that a corrupted published image/checksum is rejected before flashing, without risking an erase.
+1. Merge and deploy the JavaScript syntax correction through the manual `pages_release_tag` workflow for `v2.3.0`.
+2. Confirm the hosted site loads the release manifest, lists both firmware images and verifies published SHA-256 values.
+3. Test that a corrupted image/checksum is rejected before flashing, without risking an erase.
 
 Do not claim the remaining checks passed without evidence. Do not merge or release another firmware source change without hardware validation.
