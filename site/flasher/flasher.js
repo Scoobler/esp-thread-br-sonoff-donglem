@@ -131,11 +131,14 @@ async function flash() {
         $("progress").value = Math.min(100, 100 * written / total);
       }
     });
-    status("Firmware written and verified. Restarting ESP32…");
-    await loader.after("hard_reset");
+    // esptool-js v0.7.1 after("hard_reset") only deasserts RTS; it does
+    // not pulse EN/reset. The Dongle-M can remain in ROM download mode.
+    // Release GPIO0 (DTR=0), pulse EN low (RTS=1), then release EN.
+    status("Firmware written and verified. Pulsing ESP32 hardware reset…");
+    await loader.after("custom_reset", false, "D0|R0|W100|R1|W150|R0|W400");
     status(mode.destructive
-      ? "Fresh installation complete. ESP32 settings were erased. Configure Wi-Fi if needed, then set up or restore your Thread dataset using the README instructions."
-      : "Upgrade complete. The Dongle-M should restart and reconnect using its retained Wi-Fi and Thread settings.");
+      ? "Fresh installation flashed and reset pulse sent. The Dongle-M should start its setup SoftAP; configure Wi-Fi and restore your Thread dataset if required."
+      : "Upgrade flashed and reset pulse sent. The Dongle-M should reconnect using its saved Wi-Fi and Thread settings.");
   } catch (error) {
     status(`Error: ${error.message || error}`);
   } finally {
