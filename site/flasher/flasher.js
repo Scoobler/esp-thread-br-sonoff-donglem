@@ -30,7 +30,12 @@ function refresh() {
   $("flash").disabled = busy || !$("confirm").checked ||
     (custom ? !$("custom-file").files.length : !releaseManifest);
 }
-modeInputs.forEach(i => i.addEventListener("change", refresh));
+modeInputs.forEach(i => i.addEventListener("change", () => {
+  // The acknowledgement belongs to the selected operation; changing
+  // between Upgrade and Fresh installation requires a new acknowledgement.
+  $("confirm").checked = false;
+  refresh();
+}));
 $("source").addEventListener("change", refresh);
 $("custom-file").addEventListener("change", refresh);
 $("confirm").addEventListener("change", refresh);
@@ -80,10 +85,8 @@ async function flash() {
   const mode = currentMode();
   const custom = $("source").value === "custom";
   if (!$("confirm").checked || (!custom && !releaseManifest)) return;
-  const prompt = mode.destructive
-    ? "ERASE ALL ESP32 FLASH and install new firmware? Wi-Fi credentials, Thread dataset and other settings will be lost."
-    : "Upgrade the ESP32 firmware at 0x20000? NVS and the Thread dataset should be preserved, but a backup is recommended.";
-  if (!window.confirm(prompt)) return;
+  // The explicit mode-specific acknowledgement checkbox above is the
+  // confirmation. Do not show a redundant native browser confirm dialog.
   busy = true; refresh();
   $("progress").value = 0;
   let transport = null;
