@@ -21,6 +21,15 @@ permissions:
   contents: read
 
 jobs:
+  web_syntax:
+    name: Validate browser flasher JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Check JavaScript module syntax
+        run: node --check site/flasher/flasher.js
+
   build:
     name: Build Dongle-M firmware
     if: github.event_name != 'workflow_dispatch' || inputs.pages_release_tag == ''
