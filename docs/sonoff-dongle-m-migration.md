@@ -162,6 +162,22 @@ Successful Wi-Fi connection or changing the configured SSID resets the Wi-Fi fai
 
 The selected infrastructure interface remains authoritative for that boot.
 
+### Network mode and hostname settings
+
+`dongle_m_settings.c` stores two settings in the `br` NVS namespace: `net_mode` (`auto`, `ethernet`, `wifi`) and `hostname`. Kconfig provides the defaults (`ESP_BR_DONGLE_M_NETMODE_DEFAULT`, `ESP_BR_DONGLE_M_HOSTNAME`); the `dongle` console command changes the stored values.
+
+| Mode | Startup | Runtime |
+|---|---|---|
+| `auto` | As in the table above | As described below |
+| `ethernet` | Waits for an Ethernet IPv4 address indefinitely; Wi-Fi and the SoftAP are never started | An Ethernet loss does not reboot into Wi-Fi; the device waits for Ethernet to return |
+| `wifi` | Ethernet is not started | No Ethernet recovery reboots |
+
+The console command is registered before backbone selection, so the mode can be changed while an Ethernet-only device is waiting.
+
+`esp_ot_br.c` sets the upstream mDNS hostname `esp-ot-br`; the board code then applies the configured hostname, so no upstream file needs to change. A hostname that was set explicitly (or a non-default Kconfig hostname) is also applied with `esp_netif_set_hostname()` on `ETHERNET_EVENT_START` and before the Wi-Fi station connects, so it is sent as DHCP option 12. Without such a setting the DHCP hostname stays at the ESP-IDF default.
+
+All three modes, the hostname (including DHCP option 12, verified with a packet capture) and retention across the Upgrade image were tested on a Dongle-M.
+
 ---
 
 ## Runtime infrastructure recovery
