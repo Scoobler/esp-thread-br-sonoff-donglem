@@ -14,7 +14,9 @@ and this project uses [Semantic Versioning](https://semver.org/).
   starts Wi-Fi or the provisioning SoftAP; Wi-Fi-only skips Ethernet. A set
   hostname is used for mDNS and as DHCP hostname. Settings are stored in NVS
   and survive the Upgrade image; Kconfig provides the defaults. Proposed in
-  [#27](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/27).
+  [#27](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/issues/27),
+  implemented by Igor Sweet in
+  [PR #28](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/pull/28).
 
 ### Documentation
 
