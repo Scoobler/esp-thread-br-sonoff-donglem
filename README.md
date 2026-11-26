@@ -288,6 +288,30 @@ This avoids repeatedly switching interfaces during unstable network conditions. 
 
 ---
 
+## Network mode and hostname
+
+Two device settings can be changed on the USB serial console (115200 baud) with the `dongle` command:
+
+| Command | Effect |
+|---|---|
+| `dongle` | Show the current settings |
+| `dongle netmode auto` | Ethernet first, Wi-Fi fallback (default, as described above) |
+| `dongle netmode ethernet` | Ethernet only: Wi-Fi and the provisioning SoftAP are never started; without Ethernet the device keeps waiting and logs a reminder every 60 seconds |
+| `dongle netmode wifi` | Wi-Fi only: Ethernet is not started |
+| `dongle hostname <name>` | Set the mDNS hostname (default `esp-ot-br`); a hostname set this way is also sent to the DHCP server |
+| `dongle hostname --default` | Return to the default hostname |
+| `dongle reboot` | Restart the device |
+
+A new network mode applies after `dongle reboot`. A new hostname applies to mDNS immediately and to DHCP after the next reboot. Hostnames use 1–32 lowercase letters, digits or `-`.
+
+The settings are stored in NVS, so the Upgrade image keeps them, while a fresh installation resets them to the defaults. The `dongle` command is available while the device waits for Ethernet, so an Ethernet-only device without a cable can be switched back with `dongle netmode auto`.
+
+Builds from source can change the defaults with `ESP_BR_DONGLE_M_NETMODE_DEFAULT` and `ESP_BR_DONGLE_M_HOSTNAME`.
+
+> When several dongles share a network, give each one its own hostname. Otherwise mDNS renames one of them (for example to `esp-ot-br-2`), which can confuse integrations that use the `.local` name.
+
+---
+
 # LED status
 
 The onboard RGB LED is used to show the current operating state.
