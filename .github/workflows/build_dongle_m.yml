@@ -2,6 +2,11 @@ name: Build Sonoff Dongle-M OTBR
 
 on:
   workflow_dispatch:
+    inputs:
+      pages_release_tag:
+        description: 'Optional published tag (e.g. v2.3.0) to redeploy its existing firmware to GitHub Pages'
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -16,8 +21,18 @@ permissions:
   contents: read
 
 jobs:
+  web_syntax:
+    name: Validate browser flasher JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Check JavaScript module syntax
+        run: node --check site/flasher/flasher.js
+
   build:
     name: Build Dongle-M firmware
+    if: github.event_name != 'workflow_dispatch' || inputs.pages_release_tag == ''
     runs-on: ubuntu-latest
 
     container:
@@ -56,6 +71,12 @@ jobs:
 
           echo "Approved GitHub Actions workflow allowlist validated."
 
+      - name: Validate non-destructive upgrade packager
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools/release/tests -p 'test_*.py' -v
+
       - name: Build Dongle-M firmware
         shell: bash
         run: |
@@ -80,6 +101,19 @@ jobs:
           python3 tools/release/merge_dongle_m_image.py \
             examples/basic_thread_border_router/build-sonoff-dongle-m \
             --output "artifacts/${FIRMWARE_NAME}"
+
+      - name: Create persistent-settings-preserving USB upgrade image
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            UPGRADE_NAME="sonoff-dongle-m-otbr-${GITHUB_REF_NAME}-upgrade.bin"
+          else
+            UPGRADE_NAME="sonoff-dongle-m-otbr-ci-upgrade.bin"
+          fi
+          python3 tools/release/create_upgrade_image.py \
+            examples/basic_thread_border_router/build-sonoff-dongle-m \
+            --output "artifacts/${UPGRADE_NAME}"
 
       - name: Show firmware checksums
         shell: bash
@@ -152,3 +186,113 @@ jobs:
             artifacts/*.bin
             artifacts/*.sha256
           fail_on_unmatched_files: true
+
+  pages_prepare:
+    name: Prepare published firmware website
+    # 'always' allows manual deployment even though build/release are skipped.
+    if: >-
+      always() &&
+      ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.release.result == 'success') ||
+       (github.event_name == 'workflow_dispatch' && inputs.pages_release_tag != ''))
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out flasher site
+        uses: actions/checkout@v5
+        with:
+          # A manual redeployment must use the corrected website source from
+          # main while reusing the immutable firmware assets of the release.
+          ref: ${{ github.ref_name }}
+
+      - name: Download firmware from this tagged build
+        if: github.event_name == 'push'
+        uses: actions/download-artifact@v4
+        with:
+          name: sonoff-dongle-m-firmware
+          path: artifacts
+
+      - name: Download firmware from an existing published release
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.pages_release_tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a published semantic-version tag such as v2.3.0"
+            exit 1
+          fi
+          mkdir -p artifacts
+          gh release download "${RELEASE_TAG}" \
+            --pattern "sonoff-dongle-m-otbr-${RELEASE_TAG}*.bin*" \
+            --dir artifacts
+
+
+      - name: Validate flasher JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check site/flasher/flasher.js
+
+      - name: Assemble GitHub Pages release site
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.pages_release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp -r site/flasher/. dist/
+          cp artifacts/*.bin dist/
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          dist = Path("dist")
+          images = {
+              "full": (f"sonoff-dongle-m-otbr-{tag}.bin", 0),
+              "upgrade": (f"sonoff-dongle-m-otbr-{tag}-upgrade.bin", 0x20000),
+          }
+          manifest = {"version": tag}
+          for key, (filename, offset) in images.items():
+              path = dist / filename
+              if not path.is_file():
+                  raise SystemExit(f"Required release image missing: {filename}")
+              sha = hashlib.sha256(path.read_bytes()).hexdigest()
+              expected = (Path("artifacts") / (filename + ".sha256")).read_text().split()[0]
+              if sha != expected:
+                  raise SystemExit(f"Checksum mismatch for {filename}")
+              manifest[key] = {"file": filename, "offset": offset, "sha256": sha}
+          (dist / "firmware.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages website
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  pages:
+    name: Publish browser flasher to GitHub Pages
+    needs: pages_prepare
+    # Explicit status check is required when upstream build/release jobs were
+    # intentionally skipped for a manual pages_release_tag redeployment.
+    if: ${{ always() && needs.pages_prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # A separate job avoids the artifact discovery race when upload and
+      # deploy run back-to-back in the same job (actions/deploy-pages#451).
+      - name: Publish GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

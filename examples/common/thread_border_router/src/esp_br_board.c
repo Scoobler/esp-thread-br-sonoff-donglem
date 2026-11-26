@@ -35,7 +35,6 @@
 #endif
 
 _Static_assert(CONFIG_ESP_BR_RCP_UART_PORT == 1, "Dongle-M MG24 must use UART1");
-_Static_assert(CONFIG_ESP_BR_RCP_UART_BAUDRATE == 115200, "Dongle-M stock MG24 requires 115200 baud");
 _Static_assert(CONFIG_PIN_TO_RCP_TX == 13, "Dongle-M host RX/RCP TX must use GPIO13");
 _Static_assert(CONFIG_PIN_TO_RCP_RX == 17, "Dongle-M host TX/RCP RX must use GPIO17");
 _Static_assert(CONFIG_PIN_TO_RCP_RESET == CONFIG_ESP_BR_BOARD_MG24_RESET_GPIO, "MG24 reset GPIO mismatch");
@@ -51,9 +50,9 @@ void esp_br_board_log_profile(void)
 {
 #if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
     ESP_LOGI(TAG, "Board profile: Sonoff Dongle-M (classic ESP32, 16 MB flash)");
-    ESP_LOGI(TAG, "Stock MG24 RCP: UART%d, host RX GPIO%d, host TX GPIO%d, %d 8N1, no flow control",
-             CONFIG_ESP_BR_RCP_UART_PORT, CONFIG_PIN_TO_RCP_TX, CONFIG_PIN_TO_RCP_RX,
-             CONFIG_ESP_BR_RCP_UART_BAUDRATE);
+    ESP_LOGI(TAG, "Stock MG24 RCP: UART%d, host RX GPIO%d, host TX GPIO%d, 8N1, no flow control",
+             CONFIG_ESP_BR_RCP_UART_PORT, CONFIG_PIN_TO_RCP_TX, CONFIG_PIN_TO_RCP_RX);
+    ESP_LOGI(TAG, "MG24 Spinel baud: probe 115200 first, then 460800 before OpenThread starts");
     ESP_LOGI(TAG, "MG24 control GPIOs: reset GPIO%d, bootloader GPIO%d (defined only; automatic update disabled)",
              CONFIG_ESP_BR_BOARD_MG24_RESET_GPIO, CONFIG_ESP_BR_BOARD_MG24_CONTROL_GPIO);
     ESP_LOGI(TAG, "Ethernet: IP101GA RMII, PHY addr %d, MDC GPIO%d, MDIO GPIO%d, reset GPIO%d, clock input GPIO%d",

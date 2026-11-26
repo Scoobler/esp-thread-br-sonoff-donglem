@@ -11,5 +11,6 @@ typedef enum {
 } dongle_m_led_interface_t;
 
 void dongle_m_led_init(void);
+void dongle_m_led_start_rcp_fault(void);
 void dongle_m_led_set_interface(dongle_m_led_interface_t interface);
 void dongle_m_led_set_thread_ready(bool ready);

@@ -5,6 +5,107 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Documentation
+
+- Rework the README for the published v2.3.0 release: make the installation
+  options easier to follow, clarify that the official Sonoff flasher accepts
+  only the full image, and remove obsolete vNEXT release text.
+- Distinguish the current Espressif Web UI from the original custom Web UI;
+  Active Dataset import/export remains available via the USB console, not
+  the current Web UI.
+- Clarify MG24 GPIO reset wiring versus the disabled automatic RCP recovery
+  handler, and fold the optional MG24 firmware procedure into a collapsible
+  section matching the dataset backup procedure.
+- Rename the project-specific browser interface to **Dongle-M Web Flasher**
+  and explicitly credit Espressif's esptool-js implementation.
+
+### Fixed
+
+- GitHub Pages deployment now uploads its website artifact in a separate job
+  before invoking `deploy-pages`, avoiding an artifact-discovery race observed
+  during the v2.3.0 tag deployment. A manual workflow-dispatch option can
+  redeploy the exact existing published release files without rebuilding or
+  moving an already-published version tag.
+- Fix the Pages deploy job's implicit success condition, which skipped
+  deployment when the firmware-build and release jobs were intentionally
+  skipped during manual redeployment.
+- Correct the hosted flasher's JavaScript syntax error that prevented release
+  manifest loading. Validate JavaScript syntax in CI and before Pages upload.
+- During manual Pages redeployment, deploy the current website source from
+  `main` alongside unmodified firmware and checksums from the specified release.
+- Update README and technical guidance to describe the published v2.3.0 release
+  rather than the previous prerelease state.
+
+
+## [2.3.0] - 2026-11-25
+
+### Added
+
+- GitHub Pages USB flasher candidate with **Fresh installation** (full ESP32
+  erase and merged image at `0x0`) and **Upgrade** (application slots and
+  Web UI at `0x20000`, preserving NVS and the Thread dataset on the
+  validated partition layout). Upgrade is restricted to existing Scoobler
+  OpenThread Border Router installations.
+- CI-generated full and upgrade images with SHA-256 checksums, an upgrade
+  partition-layout safety check and a tagged-release GitHub Pages deployment.
+
+### Documentation
+
+- Make the project's browser flasher the recommended user installation path
+  after release. Keep the official Sonoff flasher for MG24 prerequisites and
+  ESP32 recovery, and document manual USB flashing for both modes.
+
+### Validation (2026-11-25)
+
+- **HARDWARE PASS** reported for browser full erase/flash with automatic
+  reset and first-time Wi-Fi/Thread setup; settings-preserving browser upgrade
+  with reboot, Wi-Fi reconnection and saved Thread dataset verified.
+- Manual USB upgrade passed on Wi-Fi and Ethernet units; dataset persisted,
+  and saved Wi-Fi credentials supported Ethernet-to-Wi-Fi fallback.
+- Fixed browser chip-name detection for classic ESP32 revision 3 and used
+  an explicit DTR/RTS reset pulse after flashing.
+- **Legacy migration PASS:** stock Sonoff ESP32 firmware used to install MG24
+  RCP v2.4.4 at 115200 baud, then our v2.0.1 installed and configured with
+  Wi-Fi and the existing Thread dataset. Browser Upgrade to the current
+  candidate rebooted, rejoined Wi-Fi and preserved the exact Thread dataset.
+- Live GitHub Pages deployment and hosted checksum validation remain to be
+  checked; no published release yet.
+
+## [2.2.0] - 2026-11-25
+
+### Added
+
+- Sonoff Dongle-M startup now read-only probes the MG24 Spinel RCP at 115200
+  baud (Sonoff RCP v2.4.4) and then 460800 baud (v2.4.5), allowing one ESP32
+  image to use either version. The probe validates HDLC FCS, Spinel response
+  transaction/property/protocol compatibility and the non-empty NCP version
+  before OpenThread starts. It allows one delayed retry for slow RCP startup,
+  but never resets, configures or flashes the MG24.
+
+### Changed
+
+- A missing or incompatible MG24 now produces a clear diagnostic and leaves
+  OpenThread stopped, rather than entering a reboot loop. After both bounded
+  detection cycles fail, the Dongle-M RGB LED flashes pure red at 500 ms on /
+  500 ms off until power-off or reset.
+
+### Validation
+
+- **HARDWARE PASS** reported on 2026-11-25, using the ESP-IDF v5.5.6
+  firmware from source `36ccfc50feda1ffb12ec41cd707825c8e3b3e1bb`,
+  [CI run #48](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/actions/runs/45499255468),
+  merged image SHA-256 `c03eb7b879704f0bd1f82fa01028576cfaf8753a75f8f7744295bbf4ee5b33f3`.
+- Hardware checked: both 115200/460800 Spinel detection, recovery from
+  re-flashing MG24, incompatible Zigbee firmware rejection, bounded retry
+  and flashing-red fault LED, overnight Thread operation, and Ethernet
+  failover/failback. Documentation changes after the tested commit do not
+  modify firmware source.
+- One 460800-baud RCP radio TX timeout at about 11 h 47 min was recovered
+  by OpenThread on the first recovery attempt, with no observed impact;
+  cause undetermined. Monitor recurrence separately.
+
 ## [2.1.0] - 2026-11-24
 
 ### Changed
