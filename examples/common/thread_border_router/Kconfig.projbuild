@@ -146,6 +146,26 @@ menu "ESP Thread Border Router Example"
                 int "Dongle-M Ethernet recovery reboots before a 30 min backoff"
                 default 3
                 range 1 20
+            choice ESP_BR_DONGLE_M_NETMODE_DEFAULT
+                prompt "Dongle-M default network mode"
+                default ESP_BR_DONGLE_M_NETMODE_DEFAULT_AUTO
+                help
+                    Network mode used until one is set with the "dongle netmode"
+                    console command, which is stored in NVS.
+                config ESP_BR_DONGLE_M_NETMODE_DEFAULT_AUTO
+                    bool "Automatic: Ethernet first, Wi-Fi fallback"
+                config ESP_BR_DONGLE_M_NETMODE_DEFAULT_ETHERNET
+                    bool "Ethernet only: no Wi-Fi, no provisioning SoftAP"
+                config ESP_BR_DONGLE_M_NETMODE_DEFAULT_WIFI
+                    bool "Wi-Fi only: Ethernet is not started"
+            endchoice
+            config ESP_BR_DONGLE_M_HOSTNAME
+                string "Dongle-M default hostname"
+                default "esp-ot-br"
+                help
+                    mDNS hostname used until one is set with the "dongle hostname"
+                    console command, which is stored in NVS. A hostname other than
+                    esp-ot-br is also used as DHCP hostname.
             config ESP_BR_DONGLE_M_LED_PULSE_INTERVAL_MS
                 int "Dongle-M LED pulse interval (ms)"
                 default 2000

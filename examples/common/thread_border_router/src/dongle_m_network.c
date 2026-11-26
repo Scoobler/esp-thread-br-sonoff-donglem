@@ -2,6 +2,7 @@
 
 #include "dongle_m_network.h"
 #include "dongle_m_led.h"
+#include "dongle_m_settings.h"
 
 #include "sdkconfig.h"
 
@@ -41,6 +42,7 @@
 #define PROVISION_POLL_MS 1000
 #define ETH_RECOVERY_COOLDOWN_MS (30 * 60 * 1000)
 #define ETH_RECOVERY_RESET_MS (10 * 60 * 1000)
+#define ETHERNET_ONLY_REMINDER_MS (60 * 1000)
 
 static EventGroupHandle_t s_events;
 static TaskHandle_t s_eth_task;
@@ -226,7 +228,10 @@ static void ethernet_event_handler(void *arg, esp_event_base_t base, int32_t id,
     if (base != ETH_EVENT) {
         return;
     }
-    if (id == ETHERNET_EVENT_CONNECTED) {
+    if (id == ETHERNET_EVENT_START) {
+        /* The netif exists from here on, and DHCP only starts after link-up. */
+        dongle_m_settings_apply_dhcp_hostname(netif_for_ifkey("ETH_DEF"));
+    } else if (id == ETHERNET_EVENT_CONNECTED) {
         state_set_ethernet(true, false, true, false);
         xEventGroupSetBits(s_events, ETH_LINK);
     } else if (id == ETHERNET_EVENT_DISCONNECTED) {
@@ -318,6 +323,7 @@ static bool wifi_start_nonblocking(const char *ssid, const char *password)
     strncpy((char *)config.sta.ssid, ssid, sizeof(config.sta.ssid) - 1);
     strncpy((char *)config.sta.password, password, sizeof(config.sta.password) - 1);
     example_wifi_start();
+    dongle_m_settings_apply_dhcp_hostname(netif_for_ifkey("WIFI_STA_DEF"));
     return example_wifi_sta_do_connect(config, false) == ESP_OK;
 }
 
@@ -398,6 +404,17 @@ static bool wait_for_ethernet(void)
     return true;
 }
 
+static bool wait_for_ethernet_only(void)
+{
+    /* Ethernet-only never starts Wi-Fi or the provisioning SoftAP, so it waits for Ethernet as long as it takes.
+     * The "dongle netmode" console command stays available to switch modes. */
+    ESP_LOGI(TAG, "Ethernet-only mode; waiting for Ethernet without Wi-Fi fallback");
+    while (!wait_for(ETH_READY, ETHERNET_ONLY_REMINDER_MS)) {
+        ESP_LOGW(TAG, "Ethernet-only mode; still waiting for an Ethernet IPv4 address");
+    }
+    return true;
+}
+
 static void remember_slow_dhcp(void)
 {
     /* Ethernet delivered a lease after the startup wait had given up with the link present. */
@@ -468,10 +485,11 @@ static void runtime_monitor_task(void *arg)
                            pdMS_TO_TICKS(CONFIG_ESP_BR_DONGLE_M_ETHERNET_FAILURE_CONFIRM_MS)) {
                 char ssid[SSID_MAX_LEN] = {0};
                 char password[PASSWORD_MAX_LEN] = {0};
-                if (stored_wifi_credentials(ssid, password)) {
+                if (dongle_m_settings_netmode() != DONGLE_M_NETMODE_ETHERNET &&
+                    stored_wifi_credentials(ssid, password)) {
                     request_reboot("Ethernet unavailable; saved Wi-Fi available, rebooting for Wi-Fi recovery");
                 }
-                ESP_LOGW(TAG, "Ethernet unavailable; no Wi-Fi credentials configured");
+                ESP_LOGW(TAG, "Ethernet unavailable; no Wi-Fi fallback, waiting for Ethernet to return");
                 portENTER_CRITICAL(&s_state_lock);
                 s_state.failure_action_handled = true;
                 portEXIT_CRITICAL(&s_state_lock);
@@ -521,6 +539,7 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
 {
     char ssid[SSID_MAX_LEN] = {0};
     char password[PASSWORD_MAX_LEN] = {0};
+    dongle_m_netmode_t mode = dongle_m_settings_netmode();
     provision_result_t provision;
     uint8_t failures;
 
@@ -541,10 +560,13 @@ esp_err_t dongle_m_network_select_backbone(esp_netif_t **backbone)
 #endif
 
     /* Dongle-M uses a single authoritative backbone for each boot. */
-    if (xTaskCreate(ethernet_task, "dongle_eth", 4096, NULL, 4, &s_eth_task) != pdPASS) {
+    if (mode == DONGLE_M_NETMODE_WIFI) {
+        ESP_LOGI(TAG, "Wi-Fi-only mode; Ethernet is not started");
+    } else if (xTaskCreate(ethernet_task, "dongle_eth", 4096, NULL, 4, &s_eth_task) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
-    if (wait_for_ethernet()) {
+    if (mode != DONGLE_M_NETMODE_WIFI &&
+        (mode == DONGLE_M_NETMODE_ETHERNET ? wait_for_ethernet_only() : wait_for_ethernet())) {
         *backbone = netif_for_ifkey("ETH_DEF");
         if (*backbone) {
             /* ESP-IDF v5.5 replaced the EMAC's pass-all-multicast default with per-group MAC filters but does not

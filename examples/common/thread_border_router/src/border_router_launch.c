@@ -8,6 +8,7 @@
 #include "border_router_launch.h"
 #include "dongle_m_led.h"
 #include "dongle_m_network.h"
+#include "dongle_m_settings.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -221,6 +222,7 @@ void launch_openthread_border_router(const esp_openthread_config_t *config,
     /* Network selection may block, so register the selected backbone before
      * esp_openthread_start() calls esp_openthread_init(). */
     dongle_m_led_init();
+    dongle_m_settings_init();
 #if CONFIG_OPENTHREAD_CLI_WIFI
     ESP_ERROR_CHECK(esp_ot_wifi_config_init());
 #endif
