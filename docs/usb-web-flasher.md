@@ -1,15 +1,17 @@
-# USB web flasher and settings-preserving upgrades
+# Dongle-M Web Flasher and settings-preserving upgrades
 
-Released in **v2.3.0** on **2026-11-25**, after hardware validation of Fresh installation, settings-preserving Upgrade, and the v2.0.1 compatibility path. The GitHub Pages site has been deployed; a published JavaScript syntax defect is being corrected separately. Use the site only after that correction is deployed and browser-loaded firmware metadata is verified.
+The **[Dongle-M Web Flasher](https://scoobler.github.io/esp-thread-br-sonoff-donglem/)** provides USB-C installation and upgrades for this project's ESP32 firmware. It was introduced in **[v2.3.0](https://github.com/Scoobler/esp-thread-br-sonoff-donglem/releases/tag/v2.3.0)** and uses [Espressif's esptool-js](https://github.com/espressif/esptool-js) for browser flashing.
+
+**Hardware tested:** Fresh installation, automatic restart, settings-preserving Upgrade, and an upgrade from the older v2.0.1 firmware. The subsequently deployed GitHub Pages flasher has also successfully completed a firmware upgrade. This document describes how its two image formats work and what each operation preserves.
 
 ## Design
 
-The CI release workflow now packages two **ESP32-only** images:
+Each release provides two **ESP32-only** firmware images:
 
 | Image | Flash offset | What it writes |
 | --- | --- | --- |
-| `sonoff-dongle-m-otbr-<tag>.bin` | `0x0` | Existing merged full image (bootloader, NVS gap, OTA metadata, application, Web UI) |
-| `sonoff-dongle-m-otbr-<tag>-upgrade.bin` | `0x20000` | Both OTA application slots and Web UI; preserves the sectors below `0x20000` |
+| `sonoff-dongle-m-otbr-<tag>.bin` | `0x0` | Full merged image for a Fresh installation; requires full-chip erase and replaces ESP32 settings |
+| `sonoff-dongle-m-otbr-<tag>-upgrade.bin` | `0x20000` | Both application slots and Web UI; preserves the configuration partitions below `0x20000` |
 
 The upgrade image is a contiguous binary. Between the first application, second application and Web UI, the packaging script fills the gaps with `0xFF`. It therefore **erases both application slots and updates the Web UI** on writing and **does not preserve OTA rollback**, deliberately. The current project does not offer an established, safe runtime OTA update path.
 
@@ -24,20 +26,20 @@ The upgrade image is generated only when the partition table matches the known D
 | OTA1 | `0x320000` | `0x300000` |
 | Web storage | `0x620000` | `0x80000` |
 
-**Warning:** preserving NVS storage bytes does not guarantee compatibility with future firmware versions. Back up the Thread Active Dataset and any important configuration before upgrading. Upgrade images must never be written at `0x0`.
+**Important:** Upgrade is supported only on existing compatible installations of **this project's firmware**, not directly from stock Sonoff ESP32 firmware. Preserving NVS does not guarantee compatibility with every future firmware version. Back up your Thread Active Operational Dataset before flashing. **Never write an `*-upgrade.bin` image at `0x0` or use it in the official Sonoff Dongle Flasher.**
 
 ## Browser flasher
 
-The site source is in `site/flasher/`. It uses the Web Serial API and Espressif esptool-js. It is designed for desktop Chrome/Edge via HTTPS.
+The site source is in `site/flasher/`. It uses Web Serial and Espressif's [esptool-js](https://github.com/espressif/esptool-js) library and works with desktop Chrome or Edge over HTTPS.
 
 The UI offers two operations:
 
 - **Fresh installation:** explicit full-chip erase then merged image at `0x0`. This removes Wi-Fi credentials, Thread state and ESP32 settings. It is required when replacing the original Sonoff ESP32 firmware.
-- **Upgrade:** **only for an existing Scoobler OTBR installation** with the compatible partition layout. No full-chip erase; writes only the upgrade binary at `0x20000`. In the validated layout, this leaves NVS and OTA metadata untouched.
+- **Upgrade:** **only for an existing compatible installation of this project's firmware**. No full-chip erase; writes only the upgrade binary at `0x20000`. In the validated layout, this leaves NVS and OTA metadata untouched.
 
 Both operations support published firmware or a manually selected custom `.bin` file. The default published image is downloaded from GitHub Pages and verified against its SHA-256 checksum before flashing. Custom binary files require extra care and are not release-verified.
 
-The browser flasher passed fresh/upgrade hardware tests, including automatic reset, prior to v2.3.0 release. The hosted v2.3.0 deployment must also pass its JavaScript and release-manifest smoke tests. MG24 updates remain **out of scope**.
+The published GitHub Pages flasher has completed a hardware Upgrade test, in addition to the pre-release Fresh/Upgrade validation. **Neither option flashes or changes the MG24 RCP.**
 
 ## Manual USB commands
 
@@ -46,31 +48,31 @@ The browser flasher passed fresh/upgrade hardware tests, including automatic res
 ```bash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 erase_flash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
-  write_flash 0x0 sonoff-dongle-m-otbr-vNEXT.bin
+  write_flash 0x0 sonoff-dongle-m-otbr-v2.3.0.bin
 ```
 
 **Settings-preserving upgrade (non-destructive):**
 
 ```bash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
-  write_flash 0x20000 sonoff-dongle-m-otbr-vNEXT-upgrade.bin
+  write_flash 0x20000 sonoff-dongle-m-otbr-v2.3.0-upgrade.bin
 ```
 
-Replace `/dev/ttyUSB0` with your serial port and `vNEXT` with the published release (for example `v2.3.0`). Windows uses e.g. `COM3`. Never use `erase_flash` for an upgrade. Never flash the full merged image at `0x0` if you expect to preserve NVS.
+The examples use the **v2.3.0 release assets**. Replace `/dev/ttyUSB0` with your serial port (for example, `COM3` on Windows). Never run `erase_flash` for an Upgrade, and never use the full merged image at `0x0` if you intend to preserve NVS. The `--baud 460800` argument here is the ESP32 USB programming speed, **not** the MG24 RCP UART setting.
 
-The USB upgrade has been hardware-tested to preserve Wi-Fi and Thread settings on the reported units. The existing OTA slot selection was retained after writing both application slots; this is not a rollback-enabled update scheme. **Direct upgrading from v2.0.1 to the new candidate has also passed hardware validation.**
+The USB upgrade has been hardware-tested to preserve Wi-Fi and Thread settings on the reported units. The existing OTA slot selection was retained after writing both application slots; this is not a rollback-enabled update scheme. **Direct upgrading from v2.0.1 to v2.3.0 has passed hardware validation.**
 
 ## GitHub Pages publishing
 
-The existing approved `.github/workflows/build_dongle_m.yml` workflow packages both images during CI. For tagged releases, it prepares and deploys the static flasher with checked release binaries and `firmware.json`. Website preparation and deployment run as separate jobs. A manual `pages_release_tag` input can redeploy the existing published firmware using the latest website source from `main` without moving a release tag.
+The `.github/workflows/build_dongle_m.yml` workflow builds both firmware images and publishes their SHA-256 checksums. GitHub Pages hosts the flasher, the release binaries and a `firmware.json` manifest. The site's preparation and deployment run as separate jobs. A manual `pages_release_tag` input can redeploy the website using the existing published release binaries without changing a version tag.
 
-**Repository configuration:** GitHub Pages uses **GitHub Actions** as the build/deployment source, with `v*` release tags permitted by the `github-pages` environment. No extra workflow file was added. Published flasher URL:
+**Repository configuration:** GitHub Pages uses **GitHub Actions** as its deployment source, with `v*` tags allowed in the `github-pages` environment. Flasher URL:
 
 ```text
 https://scoobler.github.io/esp-thread-br-sonoff-donglem/
 ```
 
-A PR build creates test firmware artifacts but **does not publish the website**. This avoids deploying unvalidated firmware. The first Pages deployment occurred after the validated v2.3.0 release; the browser JavaScript syntax issue found afterward is being corrected.
+Pull-request builds generate test firmware artifacts but **do not deploy the public website**. The initial v2.3.0 deployment was followed by a JavaScript syntax fix; future website changes are checked for JavaScript syntax before publication.
 
 ## Hardware validation record — 2026-11-25
 
@@ -83,12 +85,11 @@ A PR build creates test firmware artifacts but **does not publish the website**.
 - Browser UI wording was refined to support Ethernet installations and to reserve Upgrade for existing Scoobler firmware only.
 - **Legacy upgrade PASS (v2.0.1 → new candidate):** Restored official Sonoff ESP32 firmware, downgraded MG24 to **OpenThread RCP v2.4.4 (115200 baud)**, flashed our **v2.0.1** ESP32 firmware, provisioned Wi-Fi and applied the existing Thread dataset. Used the browser **Upgrade** path at `0x20000`; firmware updated, restarted, rejoined Wi-Fi, and retained the exact Thread dataset.
 
-**Not yet verified:** successful JavaScript initialization of the live site's latest-release path following its syntax correction, and rejection of an intentionally invalid SHA-256. The site was deployed, but the initial JavaScript contained a syntax error that blocked manifest loading.
+**Hosted-site validation:** the corrected published flasher loads and has successfully flashed an Upgrade image on physical hardware. The test of deliberately corrupted firmware or checksum data being rejected **has not been reported**.
 
-## Remaining website checks
+## Additional verification
 
-1. Merge and deploy the JavaScript syntax correction through the manual `pages_release_tag` workflow for `v2.3.0`.
-2. Confirm the hosted site loads the release manifest, lists both firmware images and verifies published SHA-256 values.
-3. Test that a corrupted image/checksum is rejected before flashing, without risking an erase.
+- **Passed:** the publicly hosted v2.3.0 Web Flasher selected a published Upgrade image, flashed the ESP32 and completed the update on physical hardware.
+- **Not yet demonstrated:** rejection of a deliberately corrupted firmware download or manifest checksum before any erase/write. This should be tested in an isolated development environment, without risking a working device.
 
-Do not claim the remaining checks passed without evidence. Do not merge or release another firmware source change without hardware validation.
+Firmware changes still require the project's usual hardware-validation process. Website and documentation updates do not require changing the published v2.3.0 firmware assets.
