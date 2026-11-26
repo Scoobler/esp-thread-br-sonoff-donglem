@@ -7,6 +7,20 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Documentation
+
+- Rework the README for the published v2.3.0 release: make the installation
+  options easier to follow, clarify that the official Sonoff flasher accepts
+  only the full image, and remove obsolete vNEXT release text.
+- Distinguish the current Espressif Web UI from the original custom Web UI;
+  Active Dataset import/export remains available via the USB console, not
+  the current Web UI.
+- Clarify MG24 GPIO reset wiring versus the disabled automatic RCP recovery
+  handler, and fold the optional MG24 firmware procedure into a collapsible
+  section matching the dataset backup procedure.
+- Rename the project-specific browser interface to **Dongle-M Web Flasher**
+  and explicitly credit Espressif's esptool-js implementation.
+
 ### Fixed
 
 - GitHub Pages deployment now uploads its website artifact in a separate job
