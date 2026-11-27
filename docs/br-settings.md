@@ -41,14 +41,19 @@ changed, except settings marked `requires_restart`.
 | `thread.network_id_timeout` | int (s) | 10 … 255 | |
 | `thread.max_children` | int | 1 … `CONFIG_OPENTHREAD_MLE_MAX_CHILDREN` | Requires restart |
 | `border_routing.enabled` | bool | | |
-| `border_routing.rio_preference` | enum | `low`, `medium`, `high` | RIO advertised to the LAN; reset clears the override |
-| `border_routing.route_preference` | enum | `low`, `medium`, `high` | Route published in Network Data |
+| `border_routing.rio_preference` | enum | `low`, `medium`, `high` | RIO advertised to the LAN. Default `auto`: OpenThread derives it from the role |
+| `border_routing.route_preference` | enum | `low`, `medium`, `high` | Route published in Network Data. Default `auto` |
 | `border_routing.dhcp6_pd` | bool | | DHCPv6 prefix delegation for the OMR prefix |
-| `border_routing.nat64` | bool | | NAT64 prefix publishing |
-| `bbr.enabled` | bool | | Backbone Router |
+| `border_routing.nat64` | bool | | NAT64 prefix publishing. Default on; see note below |
+| `bbr.enabled` | bool | | Backbone Router. Default on; see note below |
 | `bbr.registration_jitter` | int (s) | 1 … 255 | |
 | `log.ot_level` | enum | `none`, `crit`, `warn`, `note`, `info`, `debg` | |
 | `log.esp_level` | enum | `none` … up to the build's maximum level | Applies to all tags |
+
+The ESP border router library enables the Backbone Router and NAT64 itself in its OpenThread state
+callback, when the device attaches or changes role. Overrides for these two settings are therefore
+re-applied after every `OPENTHREAD_EVENT_ROLE_CHANGED`. Their reported default is the library's
+behaviour (on), not the value at boot.
 
 ### `GET /br/settings`
 
@@ -61,7 +66,8 @@ Returns `result.settings`, an array with one entry per setting:
 ```
 
 `value` is read from the stack, `configured` is the saved override (`null` if none),
-`default` is the value recorded at boot before overrides were applied.
+`default` is the value recorded at boot before overrides were applied, the library default for
+Backbone Router and NAT64, or `"auto"` for settings that return to automatic behaviour when reset.
 
 ### `POST /br/settings`
 

@@ -21,11 +21,13 @@
 #include "esp_app_desc.h"
 #include "esp_br_web.h"
 #include "esp_check.h"
+#include "esp_event.h"
 #include "esp_http_server.h"
 #include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_openthread.h"
 #include "esp_openthread_lock.h"
+#include "esp_openthread_types.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "nvs.h"
@@ -77,6 +79,11 @@ typedef struct {
     otError (*set)(otInstance *instance, int32_t value);
     otError (*get)(otInstance *instance, int32_t *value);
     void (*clear)(otInstance *instance); /* optional: return to the stack's automatic behaviour */
+    /* The ESP border router library changes this setting on role changes, so re-assert overrides afterwards. */
+    bool reassert_on_role_change;
+    /* The effective stack default when it is set after boot (the recorded value would be misleading). */
+    bool has_stack_default;
+    int32_t stack_default;
 } setting_def_t;
 
 static otError set_tx_power(otInstance *ins, int32_t v)
@@ -354,70 +361,71 @@ static const setting_def_t s_settings[] = {
     {"radio.tx_power", "tx_power", "Radio", "Transmit power", "dBm",
      "IEEE 802.15.4 transmit power requested from the radio co-processor. The stock Sonoff MG24 RCP starts at "
      "0 dBm. Respect local limits (EU: 20 dBm EIRP including antenna gain).",
-     SETTING_INT, -20, 20, NULL, false, set_tx_power, get_tx_power, NULL},
+     SETTING_INT, -20, 20, NULL, false, set_tx_power, get_tx_power, NULL, false, false, 0},
     {"radio.cca_threshold", "cca_thresh", "Radio", "CCA energy-detect threshold", "dBm",
      "Clear-channel assessment threshold. Lower values make the radio back off earlier on busy channels.",
-     SETTING_INT, -100, -10, NULL, false, set_cca_threshold, get_cca_threshold, NULL},
+     SETTING_INT, -100, -10, NULL, false, set_cca_threshold, get_cca_threshold, NULL, false, false, 0},
     {"link.max_frame_retries_direct", "retry_direct", "Link", "Max frame retries (direct)", NULL,
      "MAC retransmissions for frames to rx-on neighbors.", SETTING_INT, 0, 15, NULL, false, set_retries_direct,
-     get_retries_direct, NULL},
+     get_retries_direct, NULL, false, false, 0},
     {"link.max_frame_retries_indirect", "retry_indirect", "Link", "Max frame retries (indirect)", NULL,
      "MAC retransmissions for frames to sleepy children.", SETTING_INT, 0, 15, NULL, false, set_retries_indirect,
-     get_retries_indirect, NULL},
+     get_retries_indirect, NULL, false, false, 0},
 #if CONFIG_OPENTHREAD_RADIO_TREL
     {"trel.enabled", "trel", "TREL", "TREL (Thread over Ethernet/Wi-Fi)", NULL,
      "Carry Thread frames over the backbone link so border routers on the same LAN stay connected even when "
      "they cannot hear each other over the radio.",
-     SETTING_BOOL, 0, 1, NULL, false, set_trel, get_trel, NULL},
+     SETTING_BOOL, 0, 1, NULL, false, set_trel, get_trel, NULL, false, false, 0},
 #endif
     {"thread.router_eligible", "router_elig", "Thread", "Router eligible", NULL,
      "Allow this device to become a Thread router or leader.", SETTING_BOOL, 0, 1, NULL, false, set_router_eligible,
-     get_router_eligible, NULL},
+     get_router_eligible, NULL, false, false, 0},
     {"thread.leader_weight", "leader_weight", "Thread", "Local leader weight", NULL,
      "Weight used when a new partition is formed. Give the preferred leader the highest weight.", SETTING_INT, 0,
-     255, NULL, false, set_leader_weight, get_leader_weight, NULL},
+     255, NULL, false, set_leader_weight, get_leader_weight, NULL, false, false, 0},
     {"thread.router_selection_jitter", "router_jitter", "Thread", "Router selection jitter", "s",
      "Random delay before upgrading to or downgrading from router.", SETTING_INT, 1, 255, NULL, false,
-     set_router_jitter, get_router_jitter, NULL},
+     set_router_jitter, get_router_jitter, NULL, false, false, 0},
     {"thread.router_upgrade_threshold", "rtr_upgrade", "Thread", "Router upgrade threshold", "routers",
      "Upgrade to router while the partition has fewer active routers than this.", SETTING_INT, 1, 32, NULL, false,
-     set_upgrade_threshold, get_upgrade_threshold, NULL},
+     set_upgrade_threshold, get_upgrade_threshold, NULL, false, false, 0},
     {"thread.router_downgrade_threshold", "rtr_downgrade", "Thread", "Router downgrade threshold", "routers",
      "Consider downgrading to child while the partition has more active routers than this.", SETTING_INT, 1, 32,
-     NULL, false, set_downgrade_threshold, get_downgrade_threshold, NULL},
+     NULL, false, set_downgrade_threshold, get_downgrade_threshold, NULL, false, false, 0},
     {"thread.network_id_timeout", "netid_timeout", "Thread", "Network ID timeout", "s",
      "Time without leader connectivity before a router forms a new partition.", SETTING_INT, 10, 255, NULL, false,
-     set_network_id_timeout, get_network_id_timeout, NULL},
+     set_network_id_timeout, get_network_id_timeout, NULL, false, false, 0},
     {"thread.max_children", "max_children", "Thread", "Maximum children", NULL,
      "Maximum number of end devices attached directly to this router.", SETTING_INT, 1,
-     CONFIG_OPENTHREAD_MLE_MAX_CHILDREN, NULL, true, set_max_children, get_max_children, NULL},
+     CONFIG_OPENTHREAD_MLE_MAX_CHILDREN, NULL, true, set_max_children, get_max_children, NULL, false, false, 0},
     {"border_routing.enabled", "br_enabled", "Border routing", "Border routing", NULL,
      "Advertise routes between the Thread network and the backbone link.", SETTING_BOOL, 0, 1, NULL, false,
-     set_br_enabled, get_br_enabled, NULL},
+     set_br_enabled, get_br_enabled, NULL, false, false, 0},
     {"border_routing.rio_preference", "br_rio_prf", "Border routing", "RIO preference", NULL,
      "Preference of the Route Information Options advertised to the backbone. Lets LAN hosts prefer one border "
      "router.",
      SETTING_ENUM, -1, 1, s_route_preference_names, false, set_rio_preference, get_rio_preference,
-     clear_rio_preference},
+     clear_rio_preference, false, false, 0},
     {"border_routing.route_preference", "br_route_prf", "Border routing", "Network Data route preference", NULL,
      "Preference of the external route this border router publishes in Thread Network Data.", SETTING_ENUM, -1, 1,
-     s_route_preference_names, false, set_route_preference, get_route_preference, clear_route_preference},
+     s_route_preference_names, false, set_route_preference, get_route_preference, clear_route_preference, false, false, 0},
     {"border_routing.dhcp6_pd", "br_dhcp6_pd", "Border routing", "DHCPv6 prefix delegation", NULL,
      "Request the OMR prefix from an upstream DHCPv6-PD server instead of generating a ULA prefix.", SETTING_BOOL,
-     0, 1, NULL, false, set_dhcp6_pd, get_dhcp6_pd, NULL},
+     0, 1, NULL, false, set_dhcp6_pd, get_dhcp6_pd, NULL, false, false, 0},
     {"border_routing.nat64", "nat64", "Border routing", "NAT64 prefix publishing", NULL,
-     "Publish a NAT64 prefix in Network Data.", SETTING_BOOL, 0, 1, NULL, false, set_nat64, get_nat64, NULL},
+     "Publish a NAT64 prefix in Network Data.", SETTING_BOOL, 0, 1, NULL, false, set_nat64, get_nat64, NULL, true,
+     true, 1},
     {"bbr.enabled", "bbr_enabled", "Backbone router", "Backbone Router", NULL,
      "Thread 1.2+ Backbone Router for multicast across the backbone.", SETTING_BOOL, 0, 1, NULL, false, set_bbr,
-     get_bbr, NULL},
+     get_bbr, NULL, true, true, 1},
     {"bbr.registration_jitter", "bbr_jitter", "Backbone router", "BBR registration jitter", "s",
      "Random delay before registering as Backbone Router.", SETTING_INT, 1, 255, NULL, false, set_bbr_jitter,
-     get_bbr_jitter, NULL},
+     get_bbr_jitter, NULL, false, false, 0},
     {"log.ot_level", "ot_log_level", "Logging", "OpenThread log level", NULL, "OpenThread core log level.",
-     SETTING_ENUM, 0, 5, s_ot_log_level_names, false, set_ot_log_level, get_ot_log_level, NULL},
+     SETTING_ENUM, 0, 5, s_ot_log_level_names, false, set_ot_log_level, get_ot_log_level, NULL, false, false, 0},
     {"log.esp_level", "esp_log_level", "Logging", "ESP-IDF log level", NULL,
      "Global ESP-IDF log level for all tags (limited by the build's maximum level).", SETTING_ENUM, 0,
-     CONFIG_LOG_MAXIMUM_LEVEL, s_esp_log_level_names, false, set_esp_log_level, get_esp_log_level, NULL},
+     CONFIG_LOG_MAXIMUM_LEVEL, s_esp_log_level_names, false, set_esp_log_level, get_esp_log_level, NULL, false, false, 0},
 };
 
 #define NUM_SETTINGS (sizeof(s_settings) / sizeof(s_settings[0]))
@@ -516,7 +524,13 @@ void esp_br_settings_apply_boot(void)
 #endif
     for (size_t i = 0; i < NUM_SETTINGS; i++) {
         int32_t value;
-        if (s_settings[i].get(ins, &value) == OT_ERROR_NONE) {
+        if (s_settings[i].clear) {
+            continue; /* default is the stack's automatic behaviour */
+        }
+        if (s_settings[i].has_stack_default) {
+            s_default[i] = s_settings[i].stack_default;
+            s_has_default[i] = true;
+        } else if (s_settings[i].get(ins, &value) == OT_ERROR_NONE) {
             s_default[i] = value;
             s_has_default[i] = true;
         }
@@ -611,7 +625,9 @@ static cJSON *settings_to_json(otInstance *ins)
         cJSON_AddItemToObject(item, "configured",
                               s_has_override[i] ? value_to_json(def, s_override[i]) : cJSON_CreateNull());
         cJSON_AddItemToObject(item, "default",
-                              s_has_default[i] ? value_to_json(def, s_default[i]) : cJSON_CreateNull());
+                              def->clear          ? cJSON_CreateString("auto")
+                              : s_has_default[i] ? value_to_json(def, s_default[i])
+                                                 : cJSON_CreateNull());
         cJSON_AddItemToObject(item, "apply_error", s_apply_error[i] == OT_ERROR_NONE
                                                        ? cJSON_CreateNull()
                                                        : cJSON_CreateString(otThreadErrorToString(s_apply_error[i])));
@@ -1446,9 +1462,30 @@ static esp_err_t register_uri_handlers(void *server, void *ctx)
     return ESP_OK;
 }
 
+static void role_changed_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    (void)arg;
+    (void)base;
+    (void)id;
+    (void)data;
+    otInstance *ins = esp_openthread_get_instance();
+
+    /* Runs after the ESP border router library's state callback, which re-enables BBR and NAT64. */
+    esp_openthread_lock_acquire(portMAX_DELAY);
+    for (size_t i = 0; s_booted && i < NUM_SETTINGS; i++) {
+        if (s_settings[i].reassert_on_role_change && s_has_override[i]) {
+            apply_setting(ins, i, true);
+        }
+    }
+    esp_openthread_lock_release();
+}
+
 esp_err_t esp_br_settings_init(void)
 {
     load_settings();
+    ESP_RETURN_ON_ERROR(
+        esp_event_handler_register(OPENTHREAD_EVENT, OPENTHREAD_EVENT_ROLE_CHANGED, role_changed_handler, NULL), TAG,
+        "Failed to register role change handler");
     return esp_br_web_register_extension(register_uri_handlers, NULL,
                                          sizeof(s_uri_handlers) / sizeof(s_uri_handlers[0]));
 }
