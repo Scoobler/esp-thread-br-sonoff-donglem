@@ -69,6 +69,7 @@ function lqBadge(lq) {
 }
 
 function rssiBadge(r) {
+    if (r === null || r === undefined) return '-';
     var cls = r >= -70 ? 'badge-success' : (r >= -80 ? 'badge-info' : (r >= -90 ? 'badge-warning' : 'badge-danger'));
     return '<span class="badge ' + cls + '">' + r + '</span>';
 }
@@ -119,7 +120,7 @@ function render(r) {
         ['RLOC16', function(n) { return hex16(n.rloc16); }],
         ['Role', function(n) { return e(n.role); }],
         ['Avg RSSI', function(n) { return rssiBadge(n.average_rssi); }],
-        ['Last RSSI', function(n) { return e(n.last_rssi); }],
+        ['Last RSSI', function(n) { return n.last_rssi === null ? '-' : e(n.last_rssi); }],
         ['LQI in', function(n) { return lqBadge(n.link_quality_in); }],
         ['Frame err', function(n) { return pct(n.frame_error_rate_percent); }],
         ['Msg err', function(n) { return pct(n.message_error_rate_percent); }],
@@ -131,11 +132,11 @@ function render(r) {
         ['RLOC16', function(x) { return hex16(x.rloc16); }],
         ['Ext. address', function(x) { return '<code>' + e(x.ext_address) + '</code>'; }],
         ['Next hop', function(x) { return x.next_hop === 63 ? '-' : e(x.next_hop); }],
-        ['Path cost', function(x) { return e(x.path_cost); }],
-        ['LQ in', function(x) { return lqBadge(x.link_quality_in); }],
-        ['LQ out', function(x) { return lqBadge(x.link_quality_out); }],
-        ['Link', function(x) { return x.link_established ? '<span class="badge badge-success">direct</span>' : '<span class="badge badge-warning">none</span>'; }],
-        ['Age (s)', function(x) { return e(x.age); }]], 'No routers');
+        ['Path cost', function(x) { return x.self ? '-' : e(x.path_cost); }],
+        ['LQ in', function(x) { return x.self ? '-' : lqBadge(x.link_quality_in); }],
+        ['LQ out', function(x) { return x.self ? '-' : lqBadge(x.link_quality_out); }],
+        ['Link', function(x) { return x.self ? '<span class="badge badge-info">this device</span>' : (x.link_established ? '<span class="badge badge-success">direct</span>' : '<span class="badge badge-warning">none</span>'); }],
+        ['Age (s)', function(x) { return x.self ? '-' : e(x.age); }]], 'No routers');
 
     document.getElementById('children').innerHTML = table(r.children, [
         ['ID', function(c) { return e(c.child_id); }],

@@ -809,6 +809,15 @@ static cJSON *status_mle_counters(otInstance *ins)
     return obj;
 }
 
+static void add_rssi(cJSON *obj, const char *name, int8_t rssi)
+{
+    if (rssi == OT_RADIO_RSSI_INVALID) {
+        cJSON_AddNullToObject(obj, name);
+    } else {
+        cJSON_AddNumberToObject(obj, name, rssi);
+    }
+}
+
 static cJSON *status_neighbors(otInstance *ins)
 {
     cJSON *array = cJSON_CreateArray();
@@ -819,8 +828,8 @@ static cJSON *status_neighbors(otInstance *ins)
         add_hex(n, "ext_address", info.mExtAddress.m8, OT_EXT_ADDRESS_SIZE);
         cJSON_AddNumberToObject(n, "rloc16", info.mRloc16);
         cJSON_AddStringToObject(n, "role", info.mIsChild ? "child" : "router");
-        cJSON_AddNumberToObject(n, "average_rssi", info.mAverageRssi);
-        cJSON_AddNumberToObject(n, "last_rssi", info.mLastRssi);
+        add_rssi(n, "average_rssi", info.mAverageRssi);
+        add_rssi(n, "last_rssi", info.mLastRssi);
         cJSON_AddNumberToObject(n, "link_margin", info.mLinkMargin);
         cJSON_AddNumberToObject(n, "link_quality_in", info.mLinkQualityIn);
         cJSON_AddNumberToObject(n, "frame_error_rate_percent", error_rate_percent(info.mFrameErrorRate));
@@ -839,15 +848,20 @@ static cJSON *status_routers(otInstance *ins)
 {
     cJSON *array = cJSON_CreateArray();
     uint8_t max_router_id = otThreadGetMaxRouterId(ins);
+    uint16_t own_rloc16 = otThreadGetRloc16(ins);
     for (uint8_t id = 0; id <= max_router_id; id++) {
         otRouterInfo info;
         if (otThreadGetRouterInfo(ins, id, &info) != OT_ERROR_NONE || !info.mAllocated) {
             continue;
         }
+        /* OpenThread reports no extended address or link data for the device's own entry. */
+        bool self = info.mRloc16 == own_rloc16;
         cJSON *r = cJSON_CreateObject();
         cJSON_AddNumberToObject(r, "router_id", info.mRouterId);
         cJSON_AddNumberToObject(r, "rloc16", info.mRloc16);
-        add_hex(r, "ext_address", info.mExtAddress.m8, OT_EXT_ADDRESS_SIZE);
+        add_hex(r, "ext_address", self ? otLinkGetExtendedAddress(ins)->m8 : info.mExtAddress.m8,
+                OT_EXT_ADDRESS_SIZE);
+        cJSON_AddBoolToObject(r, "self", self);
         cJSON_AddNumberToObject(r, "next_hop", info.mNextHop);
         cJSON_AddNumberToObject(r, "path_cost", info.mPathCost);
         cJSON_AddNumberToObject(r, "link_quality_in", info.mLinkQualityIn);
@@ -874,8 +888,8 @@ static cJSON *status_children(otInstance *ins)
         add_hex(c, "ext_address", info.mExtAddress.m8, OT_EXT_ADDRESS_SIZE);
         cJSON_AddNumberToObject(c, "timeout", info.mTimeout);
         cJSON_AddNumberToObject(c, "age", info.mAge);
-        cJSON_AddNumberToObject(c, "average_rssi", info.mAverageRssi);
-        cJSON_AddNumberToObject(c, "last_rssi", info.mLastRssi);
+        add_rssi(c, "average_rssi", info.mAverageRssi);
+        add_rssi(c, "last_rssi", info.mLastRssi);
         cJSON_AddNumberToObject(c, "link_quality_in", info.mLinkQualityIn);
         cJSON_AddNumberToObject(c, "frame_error_rate_percent", error_rate_percent(info.mFrameErrorRate));
         cJSON_AddNumberToObject(c, "message_error_rate_percent", error_rate_percent(info.mMessageErrorRate));

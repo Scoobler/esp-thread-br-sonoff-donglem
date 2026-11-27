@@ -99,6 +99,9 @@ UDP port, peers, counters), `border_routing` (state, OMR and on-link prefixes,
 preferences, DHCPv6-PD and NAT64 state, prefix table) and `services` (Backbone Router,
 SRP server).
 
+RSSI values are `null` until OpenThread has a measurement. The device's own entry in `routers`
+has `"self": true`; its link fields carry no meaning.
+
 ### `POST /br/status/counters/reset`
 
 Resets MAC, MLE and TREL counters.
