@@ -353,6 +353,24 @@ Once the Dongle-M is connected to Ethernet or Wi-Fi, open its IP address in a br
 
 If your Dongle-M is already on the correct Thread network, avoid **Form Network** unless you deliberately want to create a different network.
 
+## Settings, Radio status and backup/restore (unreleased)
+
+> Not yet hardware-validated and not part of any published release.
+
+Builds from the current source add three things to the Web UI and a REST API below `/br/`:
+
+- **Management → Settings:** persistent overrides, stored in NVS, for radio transmit power and CCA threshold, MAC frame retries, TREL, Thread router/leader tuning, border routing (RIO and route preference, DHCPv6-PD, NAT64), the Backbone Router and log levels. Changes are applied immediately unless marked as needing a restart. Settings survive reboots and settings-preserving upgrades; a fresh installation resets them.
+- **Radio:** link quality per neighbor (RSSI, link quality, frame and message error rates), router and child tables, MAC and MLE counters, CCA failure rate, TREL peers and border-routing prefixes.
+- **Backup & Restore** (on the Settings page): download the Active Operational Dataset together with all saved settings as JSON, and restore the dataset and/or settings from such a file without using the USB console.
+
+**TREL** (Thread Radio Encapsulation Link) is built in and enabled by default. Border routers on the same LAN then also exchange Thread frames over Ethernet/Wi-Fi, so the mesh stays connected even when they cannot hear each other over the radio. Other border routers need TREL as well for this to help.
+
+**Transmit power:** the stock Sonoff MG24 RCP starts at 0 dBm. Raising it improves links to the border router considerably. Stay within your local limit; in the EU that is 20 dBm EIRP including antenna gain, so with the stock antenna (about 3 dBi) use at most 17 dBm.
+
+The backup file contains the Thread network key. The settings and backup endpoints have no authentication, like the rest of the Web UI, so only expose the Web UI to trusted networks.
+
+See [docs/br-settings.md](docs/br-settings.md) for the REST API reference.
+
 ---
 
 # Home Assistant setup

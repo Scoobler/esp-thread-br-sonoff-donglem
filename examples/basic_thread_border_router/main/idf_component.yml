@@ -9,6 +9,8 @@ dependencies:
     path: ../../../components/esp_br_http_ota
   esp_ot_br_server:
     path: ../../../components/esp_ot_br_server
+  esp_br_settings:
+    path: ../../../components/esp_br_settings
   thread_border_router:
     path: ../../common/thread_border_router
   protocol_examples_common:

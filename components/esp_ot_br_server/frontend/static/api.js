@@ -137,10 +137,12 @@ var pages = [
       {href : '/network.html', label : 'Network'},
       {href : '/commission.html', label : 'Commissioner'},
       {href : '/addresses.html', label : 'Addresses'},
-      {href : '/tools.html', label : 'Tools'}
+      {href : '/tools.html', label : 'Tools'},
+      {href : '/settings.html', label : 'Settings'}
     ]
   },
   {href : '/topology.html', label : 'Topology'},
+  {href : '/radio.html', label : 'Radio'},
   {href : '/about.html', label : 'About'}
 ];
 var nav = document.getElementById('nav');

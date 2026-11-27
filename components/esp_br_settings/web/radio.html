@@ -1,0 +1,194 @@
+<!--
+  SPDX-FileCopyrightText: 2026 Sonoff Dongle-M OTBR contributors
+  SPDX-License-Identifier: Apache-2.0
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Thread Border Router - Radio</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+<nav class="nav" id="nav"></nav>
+<div class="container">
+    <div class="flex-between">
+        <div>
+            <h1 class="page-title">Radio &amp; Links</h1>
+            <p class="page-desc">Link quality, counters, TREL peers and border routing state of this border router</p>
+        </div>
+        <div>
+            <label class="form-check" style="display:inline-flex;margin-right:12px"><input type="checkbox" id="auto" onchange="toggleAuto()"> Auto refresh</label>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="resetCounters()">Reset counters</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="load()">Refresh</button>
+        </div>
+    </div>
+
+    <div class="grid grid-3 section">
+        <div class="card"><div class="card-header">Node</div><div id="node"></div></div>
+        <div class="card"><div class="card-header">Radio</div><div id="radio"></div></div>
+        <div class="card"><div class="card-header">TREL</div><div id="trel"></div></div>
+    </div>
+
+    <div class="card section"><div class="card-header">Neighbors</div><div class="table-wrap" id="neighbors"></div></div>
+    <div class="card section"><div class="card-header">Routers</div><div class="table-wrap" id="routers"></div></div>
+    <div class="card section"><div class="card-header">Children</div><div class="table-wrap" id="children"></div></div>
+    <div class="card section"><div class="card-header">TREL peers</div><div class="table-wrap" id="trelPeers"></div></div>
+    <div class="card section"><div class="card-header">Border routing</div><div id="br"></div><div class="table-wrap mt-16" id="prefixes"></div></div>
+    <div class="grid grid-2 section">
+        <div class="card"><div class="card-header">MAC counters</div><div id="mac"></div></div>
+        <div class="card"><div class="card-header">MLE counters</div><div id="mle"></div></div>
+    </div>
+</div>
+<div class="footer">Copyright &copy; 2026 Espressif Systems. All rights reserved.</div>
+
+<script src="/static/api.js"></script>
+<script>
+var timer = null;
+
+function rows(obj, fields) {
+    var html = '';
+    for (var i = 0; i < fields.length; i++) {
+        var f = fields[i], v = obj ? obj[f[0]] : undefined;
+        if (v === undefined || v === null) v = '-';
+        if (typeof v === 'number' && f[2]) v = f[2](v);
+        html += '<div class="info-row"><span class="info-label">' + escapeHtml(f[1]) + '</span><span class="info-value">' + escapeHtml(v) + '</span></div>';
+    }
+    return html;
+}
+
+function pct(v) { return v.toFixed(1) + ' %'; }
+function dbm(v) { return v + ' dBm'; }
+function hex16(v) { return '0x' + ('0000' + v.toString(16)).slice(-4); }
+
+function lqBadge(lq) {
+    var cls = lq >= 3 ? 'badge-success' : (lq === 2 ? 'badge-info' : (lq === 1 ? 'badge-warning' : 'badge-danger'));
+    return '<span class="badge ' + cls + '">' + lq + '</span>';
+}
+
+function rssiBadge(r) {
+    var cls = r >= -70 ? 'badge-success' : (r >= -80 ? 'badge-info' : (r >= -90 ? 'badge-warning' : 'badge-danger'));
+    return '<span class="badge ' + cls + '">' + r + '</span>';
+}
+
+function table(list, cols, empty) {
+    if (!list || !list.length) return '<div class="text-muted text-center" style="padding:8px">' + empty + '</div>';
+    var html = '<table><thead><tr>';
+    for (var c = 0; c < cols.length; c++) html += '<th>' + cols[c][0] + '</th>';
+    html += '</tr></thead><tbody>';
+    for (var i = 0; i < list.length; i++) {
+        html += '<tr>';
+        for (var j = 0; j < cols.length; j++) {
+            var v = cols[j][1](list[i]);
+            html += '<td>' + (v === undefined || v === null ? '-' : v) + '</td>';
+        }
+        html += '</tr>';
+    }
+    return html + '</tbody></table>';
+}
+
+function e(v) { return escapeHtml(v); }
+
+function counters(obj) {
+    if (!obj) return '';
+    var fields = Object.keys(obj).map(function(k) { return [k, k.replace(/_/g, ' ')]; });
+    return rows(obj, fields);
+}
+
+function render(r) {
+    document.getElementById('node').innerHTML = rows(r.node, [
+        ['role', 'Role'], ['rloc16', 'RLOC16', hex16], ['ext_address', 'Extended address'],
+        ['partition_id', 'Partition ID'], ['leader_router_id', 'Leader router ID'],
+        ['local_leader_weight', 'Local leader weight'], ['free_heap', 'Free heap'], ['min_free_heap', 'Min. free heap']]);
+    document.getElementById('radio').innerHTML = rows(r.radio, [
+        ['channel', 'Channel'], ['tx_power', 'TX power', dbm], ['cca_threshold', 'CCA threshold', dbm],
+        ['cca_failure_rate_percent', 'CCA failure rate', pct], ['receive_sensitivity', 'RX sensitivity', dbm],
+        ['rcp_version', 'RCP version']]);
+    var t = r.trel || {};
+    document.getElementById('trel').innerHTML = t.supported
+        ? rows({enabled: t.enabled ? 'yes' : 'no', udp_port: t.udp_port, peers: (t.peers || []).length,
+                tx: t.counters ? t.counters.tx_packets + ' / ' + t.counters.tx_failure + ' failed' : '-',
+                rx: t.counters ? t.counters.rx_packets : '-'},
+               [['enabled', 'Enabled'], ['udp_port', 'UDP port'], ['peers', 'Peers'], ['tx', 'TX packets'], ['rx', 'RX packets']])
+        : '<div class="text-muted">Not built into this firmware</div>';
+
+    document.getElementById('neighbors').innerHTML = table(r.neighbors, [
+        ['Ext. address', function(n) { return '<code>' + e(n.ext_address) + '</code>'; }],
+        ['RLOC16', function(n) { return hex16(n.rloc16); }],
+        ['Role', function(n) { return e(n.role); }],
+        ['Avg RSSI', function(n) { return rssiBadge(n.average_rssi); }],
+        ['Last RSSI', function(n) { return e(n.last_rssi); }],
+        ['LQI in', function(n) { return lqBadge(n.link_quality_in); }],
+        ['Frame err', function(n) { return pct(n.frame_error_rate_percent); }],
+        ['Msg err', function(n) { return pct(n.message_error_rate_percent); }],
+        ['Age (s)', function(n) { return e(n.age); }],
+        ['Thread ver.', function(n) { return e(n.version); }]], 'No neighbors');
+
+    document.getElementById('routers').innerHTML = table(r.routers, [
+        ['ID', function(x) { return e(x.router_id); }],
+        ['RLOC16', function(x) { return hex16(x.rloc16); }],
+        ['Ext. address', function(x) { return '<code>' + e(x.ext_address) + '</code>'; }],
+        ['Next hop', function(x) { return x.next_hop === 63 ? '-' : e(x.next_hop); }],
+        ['Path cost', function(x) { return e(x.path_cost); }],
+        ['LQ in', function(x) { return lqBadge(x.link_quality_in); }],
+        ['LQ out', function(x) { return lqBadge(x.link_quality_out); }],
+        ['Link', function(x) { return x.link_established ? '<span class="badge badge-success">direct</span>' : '<span class="badge badge-warning">none</span>'; }],
+        ['Age (s)', function(x) { return e(x.age); }]], 'No routers');
+
+    document.getElementById('children').innerHTML = table(r.children, [
+        ['ID', function(c) { return e(c.child_id); }],
+        ['RLOC16', function(c) { return hex16(c.rloc16); }],
+        ['Ext. address', function(c) { return '<code>' + e(c.ext_address) + '</code>'; }],
+        ['Type', function(c) { return c.rx_on_when_idle ? 'rx-on' : 'sleepy'; }],
+        ['Avg RSSI', function(c) { return rssiBadge(c.average_rssi); }],
+        ['LQI in', function(c) { return lqBadge(c.link_quality_in); }],
+        ['Frame err', function(c) { return pct(c.frame_error_rate_percent); }],
+        ['Timeout (s)', function(c) { return e(c.timeout); }],
+        ['Age (s)', function(c) { return e(c.age); }],
+        ['Queued', function(c) { return e(c.queued_messages); }]], 'No children');
+
+    document.getElementById('trelPeers').innerHTML = table(t.peers, [
+        ['Ext. address', function(p) { return '<code>' + e(p.ext_address) + '</code>'; }],
+        ['Ext. PAN ID', function(p) { return '<code>' + e(p.ext_panid) + '</code>'; }],
+        ['Address', function(p) { return e(p.address); }]], t.supported ? 'No TREL peers discovered' : 'TREL not available');
+
+    document.getElementById('br').innerHTML = rows(r.border_routing, [
+        ['state', 'State'], ['local_omr_prefix', 'Local OMR prefix'], ['favored_omr_prefix', 'Favored OMR prefix'],
+        ['favored_omr_preference', 'Favored OMR preference'], ['local_on_link_prefix', 'Local on-link prefix'],
+        ['favored_on_link_prefix', 'Favored on-link prefix'], ['rio_preference', 'RIO preference'],
+        ['route_preference', 'Route preference'], ['dhcp6_pd_state', 'DHCPv6-PD'], ['nat64_state', 'NAT64']]) +
+        rows(r.services, [['backbone_router', 'Backbone Router'], ['srp_server', 'SRP server'], ['srp_server_port', 'SRP port']]);
+    document.getElementById('prefixes').innerHTML = table(r.border_routing && r.border_routing.prefix_table, [
+        ['Prefix', function(p) { return e(p.prefix); }],
+        ['Router', function(p) { return e(p.router); }],
+        ['Type', function(p) { return p.on_link ? 'on-link' : 'route'; }],
+        ['Preference', function(p) { return e(p.route_preference); }],
+        ['Valid (s)', function(p) { return e(p.valid_lifetime); }]], 'No prefixes learned from the backbone');
+
+    document.getElementById('mac').innerHTML = counters(r.mac_counters);
+    document.getElementById('mle').innerHTML = counters(r.mle_counters);
+}
+
+function load() {
+    apiGet('/br/status').then(function(data) {
+        if (data.error !== 0 || !data.result) { showToast(data.message || 'Failed to load status', 'error'); return; }
+        render(data.result);
+    }).catch(function() { showToast('Connection error', 'error'); });
+}
+
+function toggleAuto() {
+    if (timer) { clearInterval(timer); timer = null; }
+    if (document.getElementById('auto').checked) timer = setInterval(load, 5000);
+}
+
+function resetCounters() {
+    apiPost('/br/status/counters/reset', {}).then(function() { showToast('Counters reset', 'success'); load(); })
+        .catch(function() { showToast('Connection error', 'error'); });
+}
+
+load();
+</script>
+</body>
+</html>

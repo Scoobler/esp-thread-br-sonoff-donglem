@@ -31,6 +31,9 @@
 #if CONFIG_OPENTHREAD_BR_SOFTAP_SETUP
 #include "esp_br_wifi_config.h"
 #endif
+#if CONFIG_ESP_BR_SETTINGS
+#include "esp_br_settings.h"
+#endif
 #include "openthread/backbone_router_ftd.h"
 #include "openthread/border_router.h"
 #include "openthread/cli.h"
@@ -186,6 +189,9 @@ static void ot_br_init(void *ctx)
         otDatasetConvertToTlvs(&new_dataset, &dataset);
         ESP_LOGI(TAG, "Created new random Thread dataset");
     }
+#if CONFIG_ESP_BR_SETTINGS
+    esp_br_settings_apply_boot();
+#endif
     ESP_ERROR_CHECK(esp_openthread_auto_start(&dataset));
 #if CONFIG_ESP_BR_BOARD_SONOFF_DONGLE_M
     dongle_m_led_set_thread_ready(true);
@@ -204,6 +210,10 @@ void launch_openthread_border_router(const esp_openthread_config_t *config,
 {
 #if CONFIG_OPENTHREAD_CLI
     ot_console_start();
+#endif
+
+#if CONFIG_ESP_BR_SETTINGS
+    ESP_ERROR_CHECK(esp_br_settings_init());
 #endif
 
 #if CONFIG_ESP_COEX_EXTERNAL_COEXIST_ENABLE

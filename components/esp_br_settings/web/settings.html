@@ -1,0 +1,220 @@
+<!--
+  SPDX-FileCopyrightText: 2026 Sonoff Dongle-M OTBR contributors
+  SPDX-License-Identifier: Apache-2.0
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Thread Border Router - Settings</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="/favicon.ico">
+    <style>
+        .setting-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 12px;
+                       align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+        .setting-row:last-child { border-bottom: none; }
+        .setting-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .setting-row .form-input { width: 100%; }
+        .setting-changed .form-input, .setting-changed select { border-color: var(--primary); }
+        @media (max-width: 700px) { .setting-row { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<nav class="nav" id="nav"></nav>
+<div class="container">
+    <h1 class="page-title">Settings</h1>
+    <p class="page-desc">Persistent border router settings. Saved values survive reboots and settings-preserving
+        upgrades and are applied immediately unless marked otherwise. Empty a field or use Reset to return to the
+        firmware default.</p>
+
+    <div id="groups"><div class="text-center"><div class="spinner" style="width:24px;height:24px;margin:8px auto"></div></div></div>
+
+    <div class="flex-between section">
+        <button type="button" class="btn btn-secondary" onclick="resetAll()">Reset all to defaults</button>
+        <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveChanges()">Save changes</button>
+    </div>
+
+    <h2 class="section-title">Backup &amp; Restore</h2>
+    <div class="grid grid-2 section">
+        <div class="card">
+            <div class="card-header">Backup</div>
+            <p class="form-hint" style="font-size:13px;margin-bottom:14px">
+                Downloads the Active Operational Dataset (including the Thread network key) and all saved settings
+                as JSON. Store it securely.
+            </p>
+            <a class="btn btn-primary" href="/br/backup" download>Download backup</a>
+        </div>
+        <div class="card">
+            <div class="card-header">Restore</div>
+            <div class="form-group">
+                <input class="form-input" type="file" id="restoreFile" accept="application/json,.json">
+            </div>
+            <div class="form-group form-check">
+                <input type="checkbox" id="restoreDataset" checked>
+                <label for="restoreDataset">Thread network (Active Dataset)</label>
+            </div>
+            <div class="form-group form-check">
+                <input type="checkbox" id="restoreSettings" checked>
+                <label for="restoreSettings">Settings (replaces all saved settings)</label>
+            </div>
+            <button type="button" class="btn btn-danger" id="restoreBtn" onclick="restoreBackup()">Restore</button>
+            <div class="form-hint" id="restoreStatus"></div>
+        </div>
+    </div>
+</div>
+<div class="footer">Copyright &copy; 2026 Espressif Systems. All rights reserved.</div>
+
+<script src="/static/api.js"></script>
+<script>
+var settings = [];
+
+function valueText(s, v) {
+    if (v === null || v === undefined) return '-';
+    if (s.type === 'bool') return v ? 'on' : 'off';
+    return String(v) + (s.unit ? ' ' + s.unit : '');
+}
+
+function inputHtml(s, i) {
+    var v = s.configured !== null ? s.configured : '';
+    var id = 'set-' + i;
+    if (s.type === 'bool' || s.type === 'enum') {
+        var opts = s.type === 'bool' ? ['true', 'false'] : s.options;
+        var html = '<select class="form-input" id="' + id + '" onchange="markChanged(' + i + ')">';
+        html += '<option value=""' + (v === '' ? ' selected' : '') + '>Default (' + escapeHtml(valueText(s, s['default'])) + ')</option>';
+        for (var j = 0; j < opts.length; j++) {
+            var label = s.type === 'bool' ? (opts[j] === 'true' ? 'on' : 'off') : opts[j];
+            var sel = (String(v) === opts[j]) ? ' selected' : '';
+            html += '<option value="' + escapeHtml(opts[j]) + '"' + sel + '>' + escapeHtml(label) + '</option>';
+        }
+        return html + '</select>';
+    }
+    return '<input class="form-input" type="number" id="' + id + '" min="' + s.min + '" max="' + s.max +
+        '" step="1" value="' + escapeHtml(v) + '" placeholder="Default (' + escapeHtml(valueText(s, s['default'])) +
+        ')" oninput="markChanged(' + i + ')">';
+}
+
+function render(list) {
+    settings = list;
+    var groups = {}, order = [];
+    for (var i = 0; i < list.length; i++) {
+        if (!groups[list[i].group]) { groups[list[i].group] = []; order.push(list[i].group); }
+        groups[list[i].group].push(i);
+    }
+    var html = '';
+    for (var g = 0; g < order.length; g++) {
+        html += '<div class="card section"><div class="card-header">' + escapeHtml(order[g]) + '</div>';
+        var idx = groups[order[g]];
+        for (var k = 0; k < idx.length; k++) {
+            var i = idx[k], s = list[i];
+            var badges = '';
+            if (s.configured !== null) badges += ' <span class="badge badge-info">saved</span>';
+            if (s.requires_restart) badges += ' <span class="badge badge-warning">restart</span>';
+            if (s.apply_error) badges += ' <span class="badge badge-danger">' + escapeHtml(s.apply_error) + '</span>';
+            html += '<div class="setting-row" id="row-' + i + '"><div>' +
+                '<div class="form-label">' + escapeHtml(s.label) + badges + '</div>' +
+                '<div class="form-hint">' + escapeHtml(s.description) + '</div>' +
+                '<div class="setting-meta"><code>' + escapeHtml(s.key) + '</code> · current: ' +
+                escapeHtml(valueText(s, s.value)) + ' · default: ' + escapeHtml(valueText(s, s['default'])) +
+                (s.type === 'int' ? ' · range ' + s.min + '…' + s.max : '') + '</div></div>' +
+                '<div>' + inputHtml(s, i) + '</div>' +
+                '<div><button type="button" class="btn btn-secondary btn-sm" onclick="resetOne(' + i + ')"' +
+                (s.configured === null ? ' disabled' : '') + '>Reset</button></div></div>';
+        }
+        html += '</div>';
+    }
+    document.getElementById('groups').innerHTML = html;
+}
+
+function markChanged(i) {
+    document.getElementById('row-' + i).classList.add('setting-changed');
+}
+
+function load() {
+    apiGet('/br/settings').then(function(data) {
+        if (data.error !== 0 || !data.result) { showToast(data.message || 'Failed to load settings', 'error'); return; }
+        render(data.result.settings);
+    }).catch(function() { showToast('Connection error', 'error'); });
+}
+
+function readInput(s, i) {
+    var raw = document.getElementById('set-' + i).value.trim();
+    if (raw === '') return null;
+    if (s.type === 'bool') return raw === 'true';
+    if (s.type === 'enum') return raw;
+    return parseInt(raw, 10);
+}
+
+function handleResult(data, okMsg) {
+    if (data.error !== 0) {
+        var details = data.result ? Object.keys(data.result).map(function(k) { return k + ': ' + data.result[k]; }).join(', ') : '';
+        showToast((data.message || 'Failed') + (details ? ' (' + details + ')' : ''), 'error');
+        return;
+    }
+    var changes = data.result.changes || {};
+    var restart = Object.keys(changes).filter(function(k) { return changes[k] === 'restart_required'; });
+    var failed = Object.keys(changes).filter(function(k) { return changes[k] !== 'applied' && changes[k] !== 'restart_required'; });
+    if (failed.length) showToast('Saved, but not applied: ' + failed.join(', '), 'error');
+    else if (restart.length) showToast(okMsg + ' — takes effect after restart: ' + restart.join(', '), 'info');
+    else showToast(okMsg, 'success');
+    render(data.result.settings);
+}
+
+function saveChanges() {
+    var body = {}, count = 0;
+    for (var i = 0; i < settings.length; i++) {
+        if (!document.getElementById('row-' + i).classList.contains('setting-changed')) continue;
+        body[settings[i].key] = readInput(settings[i], i);
+        count++;
+    }
+    if (!count) { showToast('No changes', 'info'); return; }
+    apiPost('/br/settings', body).then(function(d) { handleResult(d, 'Settings saved'); })
+        .catch(function() { showToast('Connection error', 'error'); });
+}
+
+function resetOne(i) {
+    apiPost('/br/settings/reset', {keys: [settings[i].key]}).then(function(d) { handleResult(d, 'Reset to default'); })
+        .catch(function() { showToast('Connection error', 'error'); });
+}
+
+function resetAll() {
+    if (!confirm('Reset all saved settings to their firmware defaults?')) return;
+    apiPost('/br/settings/reset', {}).then(function(d) { handleResult(d, 'All settings reset'); })
+        .catch(function() { showToast('Connection error', 'error'); });
+}
+
+function restoreBackup() {
+    var file = document.getElementById('restoreFile').files[0];
+    var status = document.getElementById('restoreStatus');
+    if (!file) { showToast('Choose a backup file', 'error'); return; }
+    var wantDataset = document.getElementById('restoreDataset').checked;
+    var wantSettings = document.getElementById('restoreSettings').checked;
+    if (!wantDataset && !wantSettings) { showToast('Nothing selected to restore', 'error'); return; }
+    var reader = new FileReader();
+    reader.onload = function() {
+        var backup;
+        try { backup = JSON.parse(reader.result); } catch (e) { showToast('Invalid JSON file', 'error'); return; }
+        var msg = 'Restore ' + (wantDataset ? 'the Thread network' : '') + (wantDataset && wantSettings ? ' and ' : '') +
+            (wantSettings ? 'all settings' : '') + ' from "' + file.name + '"?' +
+            (wantDataset ? '\n\nIf the dataset differs, Thread restarts and this border router joins the restored network.' : '');
+        if (!confirm(msg)) return;
+        backup.restore = {dataset: wantDataset, settings: wantSettings};
+        status.textContent = 'Restoring...';
+        apiPost('/br/restore', backup).then(function(d) {
+            if (d.error !== 0) {
+                status.textContent = d.message + (d.result && d.result.dataset ? ' (dataset: ' + d.result.dataset + ')' : '');
+                showToast(d.message || 'Restore failed', 'error');
+                return;
+            }
+            status.textContent = 'Dataset: ' + d.result.dataset + ', settings changed: ' + Object.keys(d.result.settings).length;
+            showToast('Restore complete', 'success');
+            load();
+        }).catch(function() { status.textContent = 'Connection error'; showToast('Connection error', 'error'); });
+    };
+    reader.readAsText(file);
+}
+
+load();
+</script>
+</body>
+</html>

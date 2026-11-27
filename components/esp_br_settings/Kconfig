@@ -1,0 +1,22 @@
+menu "ESP Thread Border Router settings"
+
+    config ESP_BR_SETTINGS
+        bool "Persistent border router settings, status and backup/restore"
+        depends on OPENTHREAD_BORDER_ROUTER && OPENTHREAD_FTD
+        default n
+        help
+            Adds persisted (NVS) overrides for radio, link, TREL, Thread routing, border routing,
+            Backbone Router and logging settings, a radio/link status view and a JSON backup and
+            restore of the Active Operational Dataset and these settings. Exposed as a REST API
+            below /br/ and as Settings and Radio pages in the border router Web UI.
+
+    config ESP_BR_SETTINGS_TREL_DEFAULT
+        bool "Enable TREL when no saved setting exists"
+        depends on ESP_BR_SETTINGS && OPENTHREAD_RADIO_TREL
+        default y
+        help
+            TREL (Thread Radio Encapsulation Link) carries Thread frames over the Ethernet/Wi-Fi
+            backbone, so border routers on the same LAN stay connected even when they cannot
+            hear each other over IEEE 802.15.4. The saved setting overrides this default.
+
+endmenu

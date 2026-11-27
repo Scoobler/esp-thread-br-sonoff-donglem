@@ -79,6 +79,15 @@ typedef struct http_server {
 
 static http_server_t s_server = {NULL, {"", ""}, 80}; /* the instance of server */
 
+#define WEB_EXTENSION_MAX 2
+typedef struct {
+    esp_br_web_extension_register_t register_fn;
+    void *ctx;
+    size_t max_handlers;
+} web_extension_t;
+
+static web_extension_t s_web_extensions[WEB_EXTENSION_MAX];
+
 /**
  * @brief The basic parameter definition for parsing url
  */
@@ -1368,6 +1377,9 @@ static httpd_handle_t *start_esp_br_http_server(const char *base_path)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers = (sizeof(s_resource_handlers) + sizeof(s_web_gui_handlers)) / sizeof(httpd_uri_t) + 30;
+    for (size_t i = 0; i < WEB_EXTENSION_MAX; i++) {
+        config.max_uri_handlers += s_web_extensions[i].max_handlers;
+    }
     config.max_resp_headers = (sizeof(s_resource_handlers) + sizeof(s_web_gui_handlers)) / sizeof(httpd_uri_t) + 30;
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.stack_size = 8 * 1024;
@@ -1393,6 +1405,13 @@ static httpd_handle_t *start_esp_br_http_server(const char *base_path)
     }
     httpd_server_register_http_uri(&s_server, s_resource_handlers, sizeof(s_resource_handlers) / sizeof(httpd_uri_t));
     httpd_server_register_http_uri(&s_server, s_web_gui_handlers, sizeof(s_web_gui_handlers) / sizeof(httpd_uri_t));
+    /* Extensions must precede the GET catch-all, which would otherwise shadow their GET routes. */
+    for (size_t i = 0; i < WEB_EXTENSION_MAX; i++) {
+        if (s_web_extensions[i].register_fn &&
+            s_web_extensions[i].register_fn(s_server.handle, s_web_extensions[i].ctx) != ESP_OK) {
+            ESP_LOGE(WEB_TAG, "Failed to register web extension %u", (unsigned)i);
+        }
+    }
     httpd_register_uri_handler(s_server.handle, &default_uris_get);
 
     return s_server.handle;
@@ -1517,6 +1536,21 @@ void esp_br_web_start(char *base_path)
 #if CONFIG_LWIP_IPV6
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_GOT_IP6, &handler_got_ip6_event, base_path));
 #endif
+}
+
+esp_err_t esp_br_web_register_extension(esp_br_web_extension_register_t register_fn, void *ctx, size_t max_handlers)
+{
+    ESP_RETURN_ON_FALSE(register_fn, ESP_ERR_INVALID_ARG, WEB_TAG, "Invalid web extension");
+    ESP_RETURN_ON_FALSE(s_server.handle == NULL && !atomic_load(&is_br_web_server_started), ESP_ERR_INVALID_STATE,
+                        WEB_TAG, "Web server already started");
+    for (size_t i = 0; i < WEB_EXTENSION_MAX; i++) {
+        if (s_web_extensions[i].register_fn == NULL) {
+            s_web_extensions[i] =
+                (web_extension_t){.register_fn = register_fn, .ctx = ctx, .max_handlers = max_handlers};
+            return ESP_OK;
+        }
+    }
+    return ESP_ERR_NO_MEM;
 }
 
 /* 9-digit TAPs only span [0, 999999999], so this is safe to use as an invalid/sentinel value. */
