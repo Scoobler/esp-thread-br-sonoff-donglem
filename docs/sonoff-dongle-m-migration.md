@@ -136,7 +136,7 @@ The corrected startup path also maintains one matching OpenThread lock scope thr
 
 Both behaviours were established during hardware testing and are retained in the current implementation.
 
-Within that lock scope, `esp_br_settings_apply_boot()` records the stack defaults and applies the persisted settings after Border Router initialisation and before `esp_openthread_auto_start()`. This lets it change settings that require Thread to be stopped and keeps Border Router initialisation from overwriting saved values. It also enables TREL by default. The settings routes are registered through `esp_br_web_register_extension()`, the only change to the upstream web server, so they precede its static-file catch-all. See [br-settings.md](br-settings.md). This path is not yet hardware-validated.
+Within that lock scope, `esp_br_settings_apply_boot()` records the stack defaults and applies the persisted settings after Border Router initialisation and before `esp_openthread_auto_start()`. This lets it change settings that require Thread to be stopped and keeps Border Router initialisation from overwriting saved values. It also enables TREL by default. The settings routes are registered through `esp_br_web_register_extension()`, the only change to the upstream web server, so they precede its static-file catch-all. See [br-settings.md](br-settings.md). Contributor-tested on two units; not yet validated by the maintainer.
 
 ---
 

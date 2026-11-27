@@ -6,7 +6,8 @@ to the border router web server. It registers its routes through
 `esp_br_web_register_extension()`, ahead of the static-file catch-all, and serves two
 embedded pages: `/settings.html` and `/radio.html`.
 
-Status: built and host-tested only. Not yet validated on Dongle-M hardware.
+Status: unreleased. Tested by the contributor on two Dongle-M units (2026-11-27); not yet
+validated by the maintainer.
 
 Like the rest of the Web UI, these endpoints have no authentication. Backups contain
 the Thread network key.

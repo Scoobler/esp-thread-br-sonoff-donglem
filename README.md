@@ -355,7 +355,7 @@ If your Dongle-M is already on the correct Thread network, avoid **Form Network*
 
 ## Settings, Radio status and backup/restore (unreleased)
 
-> Not yet hardware-validated and not part of any published release.
+> Unreleased. Tested by the contributor on two Dongle-M units (2026-11-27); not yet validated by the maintainer.
 
 Builds from the current source add three things to the Web UI and a REST API below `/br/`:
 

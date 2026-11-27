@@ -29,8 +29,9 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - `esp_br_web_register_extension()` in `esp_ot_br_server`, which lets a
   component register extra URI handlers ahead of the static-file catch-all.
 
-These changes are built and host-tested only; they have not been validated on
-Dongle-M hardware.
+Contributed by @mRgAmEwAtCh; the code was written with an AI assistant. Tested
+by the contributor on two Dongle-M units (2026-11-27); not yet validated by
+the maintainer.
 
 ### Documentation
 
