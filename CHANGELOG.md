@@ -7,6 +7,32 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Persistent border router settings (`esp_br_settings` component), enabled for
+  the Dongle-M build: radio transmit power and CCA threshold, MAC frame
+  retries, TREL, Thread router/leader tuning, border routing (RIO and route
+  preference, DHCPv6-PD, NAT64), Backbone Router and log levels. Stored in NVS,
+  applied at boot before Thread starts and immediately when changed. Exposed as
+  a REST API below `/br/` and as a **Settings** page in the Web UI. The
+  transmit-power override follows the approach and measurements from
+  Chionsas' fork (stock MG24 RCP starts at 0 dBm).
+- **Radio** page and `GET /br/status`: neighbor link quality (RSSI, link
+  quality, error rates), router and child tables, MAC/MLE counters, CCA
+  failure rate, TREL peers and counters, border-routing prefixes and
+  Backbone Router/SRP/NAT64 state.
+- JSON backup and restore of the Active Operational Dataset and all saved
+  settings (`GET /br/backup`, `POST /br/restore`) from the Settings page.
+- TREL (`CONFIG_OPENTHREAD_RADIO_TREL`) in the Dongle-M build, enabled by
+  default and switchable at runtime, so border routers on the same LAN stay
+  connected over the backbone.
+- `esp_br_web_register_extension()` in `esp_ot_br_server`, which lets a
+  component register extra URI handlers ahead of the static-file catch-all.
+
+Contributed by @mRgAmEwAtCh; the code was written with an AI assistant. Tested
+by the contributor on two Dongle-M units (2026-11-27), the Radio page display
+fix on one of them; not yet validated by the maintainer.
+
 ### Documentation
 
 - Rework the README for the published v2.3.0 release: make the installation

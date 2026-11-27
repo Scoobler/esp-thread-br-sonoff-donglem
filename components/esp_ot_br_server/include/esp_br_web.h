@@ -35,6 +35,33 @@ bool esp_br_web_is_server_started(void);
  */
 void esp_br_web_start(char *base_path);
 
+/**
+ * @brief Callback that registers additional URI handlers on the border router web server.
+ *
+ * @param[in] server The httpd_handle_t of the running web server.
+ * @param[in] ctx    The context passed to esp_br_web_register_extension().
+ */
+typedef esp_err_t (*esp_br_web_extension_register_t)(void *server, void *ctx);
+
+/**
+ * @brief Register an extension that adds URI handlers to the border router web server.
+ *
+ * Must be called before the web server starts. Extension handlers are registered before the
+ * static-file catch-all handler, so GET routes registered by the extension are reachable.
+ * Paths below "/api/" and "/node" are reserved for the Thread REST API.
+ *
+ * @param[in] register_fn  Function called once the server has started.
+ * @param[in] ctx          Opaque context passed to @p register_fn.
+ * @param[in] max_handlers Maximum number of URI handlers @p register_fn registers.
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_ARG if @p register_fn is NULL
+ *      - ESP_ERR_INVALID_STATE if the server has already started
+ *      - ESP_ERR_NO_MEM if no extension slot is free
+ */
+esp_err_t esp_br_web_register_extension(esp_br_web_extension_register_t register_fn, void *ctx,
+                                        size_t max_handlers);
+
 /** Size of an ePSKc TAP string buffer: 8 digits + checksum digit + '\0' */
 #define ESP_BR_EPSKC_TAP_LEN 10
 

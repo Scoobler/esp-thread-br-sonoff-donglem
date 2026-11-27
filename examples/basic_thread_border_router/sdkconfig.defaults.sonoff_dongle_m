@@ -35,6 +35,13 @@ CONFIG_OPENTHREAD_RCP_COMMAND=y
 CONFIG_OPENTHREAD_CLI_OTA=y
 CONFIG_AUTO_UPDATE_RCP=n
 
+# Thread Radio Encapsulation Link: border routers on the same LAN peer over the
+# backbone as well as IEEE 802.15.4. Runtime on/off via the Settings page.
+CONFIG_OPENTHREAD_RADIO_TREL=y
+
+# Persistent settings, Radio status page and backup/restore (/br/* REST API).
+CONFIG_ESP_BR_SETTINGS=y
+
 # Dongle-M startup policy: Ethernet first, then saved Wi-Fi, then current
 # upstream SoftAP provisioning/recovery.
 CONFIG_EXAMPLE_CONNECT_WIFI=y
