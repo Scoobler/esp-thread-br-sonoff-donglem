@@ -30,8 +30,8 @@ and this project uses [Semantic Versioning](https://semver.org/).
   component register extra URI handlers ahead of the static-file catch-all.
 
 Contributed by @mRgAmEwAtCh; the code was written with an AI assistant. Tested
-by the contributor on two Dongle-M units (2026-11-27); not yet validated by
-the maintainer.
+by the contributor on two Dongle-M units (2026-11-27), the Radio page display
+fix on one of them; not yet validated by the maintainer.
 
 ### Documentation
 
